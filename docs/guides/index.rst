@@ -11,3 +11,4 @@ guide.
    main
    tagger
    advanced
+   migration

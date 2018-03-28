@@ -31,7 +31,7 @@ First, install pyacoustid itself. You can do this using `pip`_, like so::
 
     $ pip install pyacoustid
 
-.. _pip: http://www.pip-installer.org/
+.. _pip: http://pip.openplans.org/
 
 Then, you will need to install `Chromaprint`_, either as a dynamic library or
 in the form of a command-line tool (``fpcalc``).
@@ -64,39 +64,36 @@ You will also need a mechanism for decoding audio files supported by the
 * OS X has a number of decoders already built into Core Audio, so there's no
   need to install anything.
 
-* On Linux, you can install `GStreamer`_ with `PyGObject`_, `FFmpeg`_, or
-  `MAD`_ with `pymad`_. How you install these will depend on your
-  distribution.
-  For example, on Ubuntu, run ``apt-get install gstreamer1.0 python-gi``. On
-  Arch Linux, you want ``pacman -S gstreamer python2-gobject``. If you use
-  GStreamer, be sure to install its codec plugins also (``gst-plugins-good``,
-  etc.).
+* On Linux, you can install `GStreamer for Python`_, `FFmpeg`_, or `MAD`_ and
+  `pymad`_. How you install these will depend on your distribution. For example,
+  on Ubuntu, run ``apt-get install python-gst0.10-dev``. On Arch Linux, you want
+  ``pacman -S gstreamer0.10-python``. If you use GStreamer, be sure to install
+  its codec plugins also.
 
-  Note that if you install beets in a virtualenv, you'll need it to have
-  ``--system-site-packages`` enabled for Python to see the GStreamer bindings.
+* On Windows, try the Gstreamer "WinBuilds" from the `OSSBuild`_ project.
 
-* On Windows, builds are provided by `GStreamer`_
-
-.. _audioread: https://github.com/beetbox/audioread
-.. _pyacoustid: http://github.com/beetbox/pyacoustid
+.. _audioread: https://github.com/sampsyo/audioread
+.. _pyacoustid: http://github.com/sampsyo/pyacoustid
+.. _GStreamer for Python:
+    http://gstreamer.freedesktop.org/modules/gst-python.html
 .. _FFmpeg: http://ffmpeg.org/
 .. _MAD: http://spacepants.org/src/pymad/
 .. _pymad: http://www.underbit.com/products/mad/
 .. _Core Audio: http://developer.apple.com/technologies/mac/audio-and-video.html
-.. _Gstreamer: http://gstreamer.freedesktop.org/
-.. _PyGObject: https://wiki.gnome.org/Projects/PyGObject
+.. _OSSBuild: http://code.google.com/p/ossbuild/
 
 To decode audio formats (MP3, FLAC, etc.) with GStreamer, you'll need the
 standard set of Gstreamer plugins. For example, on Ubuntu, install the packages
-``gstreamer1.0-plugins-good``, ``gstreamer1.0-plugins-bad``, and
-``gstreamer1.0-plugins-ugly``.
+``gstreamer0.10-plugins-good``, ``gstreamer0.10-plugins-bad``, and
+``gstreamer0.10-plugins-ugly``.
 
-Usage
+Using
 -----
 
-Once you have all the dependencies sorted out, enable the ``chroma`` plugin in
-your configuration (see :ref:`using-plugins`) to benefit from fingerprinting
-the next time you run ``beet import``.
+Once you have all the dependencies sorted out, you can enable fingerprinting by
+editing your :doc:`configuration file </reference/config>`. Put ``chroma`` on
+your ``plugins:`` line. With that, beets will use fingerprinting the next time
+you run ``beet import``.
 
 You can also use the ``beet fingerprint`` command to generate fingerprints for
 items already in your library. (Provide a query to fingerprint a subset of your
@@ -106,18 +103,8 @@ written to files' metadata.
 
 .. _submitfp:
 
-Configuration
--------------
-
-There is one configuration option in the ``chroma:`` section, ``auto``, which
-controls whether to fingerprint files during the import process. To disable
-fingerprint-based autotagging, set it to ``no``, like so::
-
-    chroma:
-        auto: no
-
 Submitting Fingerprints
------------------------
+'''''''''''''''''''''''
 
 You can help expand the `Acoustid`_ database by submitting fingerprints for the
 music in your collection. To do this, first `get an API key`_ from the Acoustid

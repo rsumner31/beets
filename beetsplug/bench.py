@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2014, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -15,8 +14,7 @@
 
 """Some simple performance benchmarks for beets.
 """
-
-from __future__ import division, absolute_import, print_function
+from __future__ import print_function
 
 from beets.plugins import BeetsPlugin
 from beets import ui
@@ -75,14 +73,13 @@ def match_benchmark(lib, prof, query=None, album_id=None):
 
     # Run the match.
     def _run_match():
-        match.tag_album(items, search_ids=[album_id])
+        match.tag_album(items, search_id=album_id)
     if prof:
         cProfile.runctx('_run_match()', {}, {'_run_match': _run_match},
                         'match.prof')
     else:
         interval = timeit.timeit(_run_match, number=1)
         print('match duration:', interval)
-
 
 class BenchmarkPlugin(BeetsPlugin):
     """A plugin for performing some simple performance benchmarks.
@@ -94,16 +91,16 @@ class BenchmarkPlugin(BeetsPlugin):
                                             action='store_true', default=False,
                                             help='performance profiling')
         aunique_bench_cmd.func = lambda lib, opts, args: \
-            aunique_benchmark(lib, opts.profile)
+                aunique_benchmark(lib, opts.profile)
 
         match_bench_cmd = ui.Subcommand('bench_match',
-                                        help='benchmark for track matching')
+                                          help='benchmark for track matching')
         match_bench_cmd.parser.add_option('-p', '--profile',
                                           action='store_true', default=False,
                                           help='performance profiling')
         match_bench_cmd.parser.add_option('-i', '--id', default=None,
                                           help='album ID to match against')
         match_bench_cmd.func = lambda lib, opts, args: \
-            match_benchmark(lib, opts.profile, ui.decargs(args), opts.id)
+                match_benchmark(lib, opts.profile, ui.decargs(args), opts.id)
 
         return [aunique_bench_cmd, match_bench_cmd]

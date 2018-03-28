@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -15,19 +14,14 @@
 
 """Tests for MusicBrainz API wrapper.
 """
-from __future__ import division, absolute_import, print_function
-
-from test import _common
+import _common
+from _common import unittest
 from beets.autotag import mb
 from beets import config
 
-import unittest
-import mock
-
-
 class MBAlbumInfoTest(_common.TestCase):
     def _make_release(self, date_str='2009', tracks=None, track_length=None,
-                      track_artist=False, medium_format='FORMAT'):
+                      track_artist=False):
         release = {
             'title': 'ALBUM TITLE',
             'id': 'ALBUM ID',
@@ -67,8 +61,7 @@ class MBAlbumInfoTest(_common.TestCase):
             for i, recording in enumerate(tracks):
                 track = {
                     'recording': recording,
-                    'position': i + 1,
-                    'number': 'A1',
+                    'position': str(i + 1),
                 }
                 if track_length:
                     # Track lengths are distinct from recording lengths.
@@ -90,12 +83,12 @@ class MBAlbumInfoTest(_common.TestCase):
             release['medium-list'].append({
                 'position': '1',
                 'track-list': track_list,
-                'format': medium_format,
+                'format': 'FORMAT',
                 'title': 'MEDIUM TITLE',
             })
         return release
 
-    def _make_track(self, title, tr_id, duration, artist=False, video=False):
+    def _make_track(self, title, tr_id, duration, artist=False):
         track = {
             'title': title,
             'id': tr_id,
@@ -113,8 +106,6 @@ class MBAlbumInfoTest(_common.TestCase):
                     'name': 'RECORDING ARTIST CREDIT',
                 }
             ]
-        if video:
-            track['video'] = 'true'
         return track
 
     def test_parse_release_with_year(self):
@@ -185,7 +176,6 @@ class MBAlbumInfoTest(_common.TestCase):
         second_track_list = [{
             'recording': tracks[1],
             'position': '1',
-            'number': 'A1',
         }]
         release['medium-list'].append({
             'position': '2',
@@ -321,64 +311,6 @@ class MBAlbumInfoTest(_common.TestCase):
         self.assertEqual(track.artist_sort, 'TRACK ARTIST SORT NAME')
         self.assertEqual(track.artist_credit, 'TRACK ARTIST CREDIT')
 
-    def test_data_source(self):
-        release = self._make_release()
-        d = mb.album_info(release)
-        self.assertEqual(d.data_source, 'MusicBrainz')
-
-    def test_ignored_media(self):
-        config['match']['ignored_media'] = ['IGNORED1', 'IGNORED2']
-        tracks = [self._make_track('TITLE ONE', 'ID ONE', 100.0 * 1000.0),
-                  self._make_track('TITLE TWO', 'ID TWO', 200.0 * 1000.0)]
-        release = self._make_release(tracks=tracks, medium_format="IGNORED1")
-        d = mb.album_info(release)
-        self.assertEqual(len(d.tracks), 0)
-
-    def test_no_ignored_media(self):
-        config['match']['ignored_media'] = ['IGNORED1', 'IGNORED2']
-        tracks = [self._make_track('TITLE ONE', 'ID ONE', 100.0 * 1000.0),
-                  self._make_track('TITLE TWO', 'ID TWO', 200.0 * 1000.0)]
-        release = self._make_release(tracks=tracks,
-                                     medium_format="NON-IGNORED")
-        d = mb.album_info(release)
-        self.assertEqual(len(d.tracks), 2)
-
-    def test_skip_data_track(self):
-        tracks = [self._make_track('TITLE ONE', 'ID ONE', 100.0 * 1000.0),
-                  self._make_track('[data track]', 'ID DATA TRACK',
-                                   100.0 * 1000.0),
-                  self._make_track('TITLE TWO', 'ID TWO', 200.0 * 1000.0)]
-        release = self._make_release(tracks=tracks)
-        d = mb.album_info(release)
-        self.assertEqual(len(d.tracks), 2)
-        self.assertEqual(d.tracks[0].title, 'TITLE ONE')
-        self.assertEqual(d.tracks[1].title, 'TITLE TWO')
-
-    def test_skip_video_tracks_by_default(self):
-        tracks = [self._make_track('TITLE ONE', 'ID ONE', 100.0 * 1000.0),
-                  self._make_track('TITLE VIDEO', 'ID VIDEO', 100.0 * 1000.0,
-                                   False, True),
-                  self._make_track('TITLE TWO', 'ID TWO', 200.0 * 1000.0)]
-        release = self._make_release(tracks=tracks)
-        d = mb.album_info(release)
-        self.assertEqual(len(d.tracks), 2)
-        self.assertEqual(d.tracks[0].title, 'TITLE ONE')
-        self.assertEqual(d.tracks[1].title, 'TITLE TWO')
-
-    def test_no_skip_video_tracks_if_configured(self):
-        config['match']['ignore_video_tracks'] = False
-        tracks = [self._make_track('TITLE ONE', 'ID ONE', 100.0 * 1000.0),
-                  self._make_track('TITLE VIDEO', 'ID VIDEO', 100.0 * 1000.0,
-                                   False, True),
-                  self._make_track('TITLE TWO', 'ID TWO', 200.0 * 1000.0)]
-        release = self._make_release(tracks=tracks)
-        d = mb.album_info(release)
-        self.assertEqual(len(d.tracks), 3)
-        self.assertEqual(d.tracks[0].title, 'TITLE ONE')
-        self.assertEqual(d.tracks[1].title, 'TITLE VIDEO')
-        self.assertEqual(d.tracks[2].title, 'TITLE TWO')
-
-
 class ParseIDTest(_common.TestCase):
     def test_parse_id_correct(self):
         id_string = "28e32c71-1450-463e-92bf-e0a46446fc11"
@@ -395,7 +327,6 @@ class ParseIDTest(_common.TestCase):
         id_url = "http://musicbrainz.org/entity/%s" % id_string
         out = mb._parse_id(id_url)
         self.assertEqual(out, id_string)
-
 
 class ArtistFlatteningTest(_common.TestCase):
     def _credit_dict(self, suffix=''):
@@ -436,8 +367,7 @@ class ArtistFlatteningTest(_common.TestCase):
     def test_alias(self):
         credit_dict = self._credit_dict()
         self._add_alias(credit_dict, suffix='en', locale='en', primary=True)
-        self._add_alias(credit_dict, suffix='en_GB', locale='en_GB',
-                        primary=True)
+        self._add_alias(credit_dict, suffix='en_GB', locale='en_GB', primary=True)
         self._add_alias(credit_dict, suffix='fr', locale='fr')
         self._add_alias(credit_dict, suffix='fr_P', locale='fr', primary=True)
         self._add_alias(credit_dict, suffix='pt_BR', locale='pt_BR')
@@ -471,80 +401,6 @@ class ArtistFlatteningTest(_common.TestCase):
         config['import']['languages'] = ['pt_BR', 'fr']
         flat = mb._flatten_artist_credit([credit_dict])
         self.assertEqual(flat, ('ALIASfr_P', 'ALIASSORTfr_P', 'CREDIT'))
-
-
-class MBLibraryTest(unittest.TestCase):
-    def test_match_track(self):
-        with mock.patch('musicbrainzngs.search_recordings') as p:
-            p.return_value = {
-                'recording-list': [{
-                    'title': 'foo',
-                    'id': 'bar',
-                    'length': 42,
-                }],
-            }
-            ti = list(mb.match_track('hello', 'there'))[0]
-
-            p.assert_called_with(artist='hello', recording='there', limit=5)
-            self.assertEqual(ti.title, 'foo')
-            self.assertEqual(ti.track_id, 'bar')
-
-    def test_match_album(self):
-        mbid = 'd2a6f856-b553-40a0-ac54-a321e8e2da99'
-        with mock.patch('musicbrainzngs.search_releases') as sp:
-            sp.return_value = {
-                'release-list': [{
-                    'id': mbid,
-                }],
-            }
-            with mock.patch('musicbrainzngs.get_release_by_id') as gp:
-                gp.return_value = {
-                    'release': {
-                        'title': 'hi',
-                        'id': mbid,
-                        'medium-list': [{
-                            'track-list': [{
-                                'recording': {
-                                    'title': 'foo',
-                                    'id': 'bar',
-                                    'length': 42,
-                                },
-                                'position': 9,
-                                'number': 'A1',
-                            }],
-                            'position': 5,
-                        }],
-                        'artist-credit': [{
-                            'artist': {
-                                'name': 'some-artist',
-                                'id': 'some-id',
-                            },
-                        }],
-                        'release-group': {
-                            'id': 'another-id',
-                        }
-                    }
-                }
-
-                ai = list(mb.match_album('hello', 'there'))[0]
-
-                sp.assert_called_with(artist='hello', release='there', limit=5)
-                gp.assert_called_with(mbid, mock.ANY)
-                self.assertEqual(ai.tracks[0].title, 'foo')
-                self.assertEqual(ai.album, 'hi')
-
-    def test_match_track_empty(self):
-        with mock.patch('musicbrainzngs.search_recordings') as p:
-            til = list(mb.match_track(' ', ' '))
-            self.assertFalse(p.called)
-            self.assertEqual(til, [])
-
-    def test_match_album_empty(self):
-        with mock.patch('musicbrainzngs.search_releases') as p:
-            ail = list(mb.match_album(' ', ' '))
-            self.assertFalse(p.called)
-            self.assertEqual(ail, [])
-
 
 def suite():
     return unittest.TestLoader().loadTestsFromName(__name__)

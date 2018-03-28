@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -15,13 +14,13 @@
 
 """Tests for autotagging functionality.
 """
-from __future__ import division, absolute_import, print_function
-
+import os
+import shutil
 import re
 import copy
-import unittest
 
-from test import _common
+import _common
+from _common import unittest
 from beets import autotag
 from beets.autotag import match
 from beets.autotag.hooks import Distance, string_dist
@@ -29,7 +28,6 @@ from beets.library import Item
 from beets.util import plurality
 from beets.autotag import AlbumInfo, TrackInfo
 from beets import config
-
 
 class PluralityTest(_common.TestCase):
     def test_plurality_consensus(self):
@@ -47,7 +45,7 @@ class PluralityTest(_common.TestCase):
     def test_plurality_conflict(self):
         objs = [1, 1, 2, 2, 3]
         obj, freq = plurality(objs)
-        self.assertTrue(obj in (1, 2))
+        self.assert_(obj in (1, 2))
         self.assertEqual(freq, 2)
 
     def test_plurality_empty_sequence_raises_error(self):
@@ -93,13 +91,11 @@ class PluralityTest(_common.TestCase):
         for f in fields:
             self.assertEqual(likelies[f], '%s_1' % f)
 
-
 def _make_item(title, track, artist=u'some artist'):
     return Item(title=title, track=track,
                 artist=artist, album=u'some album',
                 length=1,
                 mb_trackid='', mb_albumid='', mb_artistid='')
-
 
 def _make_trackinfo():
     return [
@@ -108,19 +104,13 @@ def _make_trackinfo():
         TrackInfo(u'three', None, u'some artist', length=1, index=3),
     ]
 
-
 def _clear_weights():
     """Hack around the lazy descriptor used to cache weights for
     Distance calculations.
     """
     Distance.__dict__['_weights'].computed = False
 
-
 class DistanceTest(_common.TestCase):
-    def tearDown(self):
-        super(DistanceTest, self).tearDown()
-        _clear_weights()
-
     def test_add(self):
         dist = Distance()
         dist.add('add', 1.0)
@@ -160,7 +150,7 @@ class DistanceTest(_common.TestCase):
 
         dist.add_number('number', -1, 2)
         self.assertEqual(dist._penalties['number'], [0.0, 1.0, 1.0, 1.0,
-                                                     1.0, 1.0])
+                                                          1.0, 1.0])
 
     def test_add_priority(self):
         dist = Distance()
@@ -171,12 +161,12 @@ class DistanceTest(_common.TestCase):
         self.assertEqual(dist._penalties['priority'], [0.0, 0.5])
 
         dist.add_priority('priority', 'gh', ['ab', 'cd', 'ef',
-                                             re.compile('GH', re.I)])
+                                                  re.compile('GH', re.I)])
         self.assertEqual(dist._penalties['priority'], [0.0, 0.5, 0.75])
 
         dist.add_priority('priority', 'xyz', ['abc', 'def'])
         self.assertEqual(dist._penalties['priority'], [0.0, 0.5, 0.75,
-                                                       1.0])
+                                                            1.0])
 
     def test_add_ratio(self):
         dist = Distance()
@@ -295,8 +285,7 @@ class DistanceTest(_common.TestCase):
         dist1.update(dist2)
 
         self.assertEqual(dist1._penalties, {'album': [0.5, 0.75, 0.25],
-                                            'media': [1.0, 0.05]})
-
+                                             'media': [1.0, 0.05]})
 
 class TrackDistanceTest(_common.TestCase):
     def test_identical_tracks(self):
@@ -325,7 +314,6 @@ class TrackDistanceTest(_common.TestCase):
         dist = match.track_distance(item, info, incl_artist=True)
         self.assertEqual(dist, 0.0)
 
-
 class AlbumDistanceTest(_common.TestCase):
     def _mapping(self, items, info):
         out = {}
@@ -342,12 +330,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         self.assertEqual(self._dist(items, info), 0)
 
@@ -356,12 +343,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'one', 1))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         dist = self._dist(items, info)
         self.assertNotEqual(dist, 0)
@@ -374,12 +360,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'someone else',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'someone else',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         self.assertNotEqual(self._dist(items, info), 0)
 
@@ -389,12 +374,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'should be ignored',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=True,
-            album_id=None,
-            artist_id=None,
+            artist = u'should be ignored',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = True,
+            album_id = None, artist_id = None,
         )
         self.assertEqual(self._dist(items, info), 0)
 
@@ -405,12 +389,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'should be ignored',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=True,
-            album_id=None,
-            artist_id=None,
+            artist = u'should be ignored',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = True,
+            album_id = None, artist_id = None,
         )
         info.tracks[0].artist = None
         info.tracks[1].artist = None
@@ -423,12 +406,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2, u'someone else'))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=True,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = True,
+            album_id = None, artist_id = None,
         )
         self.assertNotEqual(self._dist(items, info), 0)
 
@@ -438,12 +420,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'three', 2))
         items.append(_make_item(u'two', 3))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         dist = self._dist(items, info)
         self.assertTrue(0 < dist < 0.2)
@@ -454,12 +435,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 3))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         info.tracks[0].medium_index = 1
         info.tracks[1].medium_index = 2
@@ -473,12 +453,11 @@ class AlbumDistanceTest(_common.TestCase):
         items.append(_make_item(u'two', 2))
         items.append(_make_item(u'three', 1))
         info = AlbumInfo(
-            artist=u'some artist',
-            album=u'some album',
-            tracks=_make_trackinfo(),
-            va=False,
-            album_id=None,
-            artist_id=None,
+            artist = u'some artist',
+            album = u'some album',
+            tracks = _make_trackinfo(),
+            va = False,
+            album_id = None, artist_id = None,
         )
         info.tracks[0].medium_index = 1
         info.tracks[1].medium_index = 2
@@ -486,6 +465,123 @@ class AlbumDistanceTest(_common.TestCase):
         dist = self._dist(items, info)
         self.assertEqual(dist, 0)
 
+def _mkmp3(path):
+    shutil.copyfile(os.path.join(_common.RSRC, 'min.mp3'), path)
+class AlbumsInDirTest(_common.TestCase):
+    def setUp(self):
+        super(AlbumsInDirTest, self).setUp()
+
+        # create a directory structure for testing
+        self.base = os.path.abspath(os.path.join(self.temp_dir, 'tempdir'))
+        os.mkdir(self.base)
+
+        os.mkdir(os.path.join(self.base, 'album1'))
+        os.mkdir(os.path.join(self.base, 'album2'))
+        os.mkdir(os.path.join(self.base, 'more'))
+        os.mkdir(os.path.join(self.base, 'more', 'album3'))
+        os.mkdir(os.path.join(self.base, 'more', 'album4'))
+
+        _mkmp3(os.path.join(self.base, 'album1', 'album1song1.mp3'))
+        _mkmp3(os.path.join(self.base, 'album1', 'album1song2.mp3'))
+        _mkmp3(os.path.join(self.base, 'album2', 'album2song.mp3'))
+        _mkmp3(os.path.join(self.base, 'more', 'album3', 'album3song.mp3'))
+        _mkmp3(os.path.join(self.base, 'more', 'album4', 'album4song.mp3'))
+
+    def test_finds_all_albums(self):
+        albums = list(autotag.albums_in_dir(self.base))
+        self.assertEqual(len(albums), 4)
+
+    def test_separates_contents(self):
+        found = []
+        for _, album in autotag.albums_in_dir(self.base):
+            found.append(re.search(r'album(.)song', album[0].path).group(1))
+        self.assertTrue('1' in found)
+        self.assertTrue('2' in found)
+        self.assertTrue('3' in found)
+        self.assertTrue('4' in found)
+
+    def test_finds_multiple_songs(self):
+        for _, album in autotag.albums_in_dir(self.base):
+            n = re.search(r'album(.)song', album[0].path).group(1)
+            if n == '1':
+                self.assertEqual(len(album), 2)
+            else:
+                self.assertEqual(len(album), 1)
+
+class MultiDiscAlbumsInDirTest(_common.TestCase):
+    def setUp(self):
+        super(MultiDiscAlbumsInDirTest, self).setUp()
+
+        self.base = os.path.abspath(os.path.join(self.temp_dir, 'tempdir'))
+        os.mkdir(self.base)
+
+        self.dirs = [
+            # Nested album, multiple subdirs.
+            # Also, false positive marker in root dir, and subtitle for disc 3.
+            os.path.join(self.base, 'ABCD1234'),
+            os.path.join(self.base, 'ABCD1234', 'cd 1'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus'),
+
+            # Nested album, single subdir.
+            # Also, punctuation between marker and disc number.
+            os.path.join(self.base, 'album'),
+            os.path.join(self.base, 'album', 'cd _ 1'),
+
+            # Flattened album, case typo.
+            # Also, false positive marker in parent dir.
+            os.path.join(self.base, 'artist [CD5]'),
+            os.path.join(self.base, 'artist [CD5]', 'CAT disc 1'),
+            os.path.join(self.base, 'artist [CD5]', 'CAt disc 2'),
+
+            # Single disc album, sorted between CAT discs.
+            os.path.join(self.base, 'artist [CD5]', 'CATS'),
+        ]
+        self.files = [
+            os.path.join(self.base, 'ABCD1234', 'cd 1', 'song1.mp3'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus', 'song2.mp3'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus', 'song3.mp3'),
+            os.path.join(self.base, 'album', 'cd _ 1', 'song4.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CAT disc 1', 'song5.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CAt disc 2', 'song6.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CATS', 'song7.mp3'),
+        ]
+
+        for path in self.dirs:
+            os.mkdir(path)
+        for path in self.files:
+            _mkmp3(path)
+
+    def test_coalesce_nested_album_multiple_subdirs(self):
+        albums = list(autotag.albums_in_dir(self.base))
+        self.assertEquals(len(albums), 4)
+        root, items = albums[0]
+        self.assertEquals(root, self.dirs[0:3])
+        self.assertEquals(len(items), 3)
+
+    def test_coalesce_nested_album_single_subdir(self):
+        albums = list(autotag.albums_in_dir(self.base))
+        root, items = albums[1]
+        self.assertEquals(root, self.dirs[3:5])
+        self.assertEquals(len(items), 1)
+
+    def test_coalesce_flattened_album_case_typo(self):
+        albums = list(autotag.albums_in_dir(self.base))
+        root, items = albums[2]
+        self.assertEquals(root, self.dirs[6:8])
+        self.assertEquals(len(items), 2)
+
+    def test_single_disc_album(self):
+        albums = list(autotag.albums_in_dir(self.base))
+        root, items = albums[3]
+        self.assertEquals(root, self.dirs[8:])
+        self.assertEquals(len(items), 1)
+
+    def test_do_not_yield_empty_album(self):
+        # Remove all the MP3s.
+        for path in self.files:
+            os.remove(path)
+        albums = list(autotag.albums_in_dir(self.base))
+        self.assertEquals(len(albums), 0)
 
 class AssignmentTest(unittest.TestCase):
     def item(self, title, track):
@@ -572,7 +668,7 @@ class AssignmentTest(unittest.TestCase):
             return Item(
                 artist=u'ben harper',
                 album=u'burn to shine',
-                title=u'ben harper - Burn to Shine {0}'.format(i),
+                title=u'ben harper - Burn to Shine ' + str(i),
                 track=i,
                 length=length,
                 mb_trackid='', mb_albumid='', mb_artistid='',
@@ -602,7 +698,7 @@ class AssignmentTest(unittest.TestCase):
         trackinfo.append(info(6, u'Suzie Blue', 269.30599999999998))
         trackinfo.append(info(7, u'Steal My Kisses', 245.36000000000001))
         trackinfo.append(info(8, u'Burn to Shine', 214.90600000000001))
-        trackinfo.append(info(9, u'Show Me a Little Shame', 224.0929999999999))
+        trackinfo.append(info(9, u'Show Me a Little Shame', 224.09299999999999))
         trackinfo.append(info(10, u'Forgiven', 317.19999999999999))
         trackinfo.append(info(11, u'Beloved One', 243.733))
         trackinfo.append(info(12, u'In the Lord\'s Arms', 186.13300000000001))
@@ -611,9 +707,8 @@ class AssignmentTest(unittest.TestCase):
             match.assign_items(items, trackinfo)
         self.assertEqual(extra_items, [])
         self.assertEqual(extra_tracks, [])
-        for item, info in mapping.items():
+        for item, info in mapping.iteritems():
             self.assertEqual(items.index(item), trackinfo.index(info))
-
 
 class ApplyTestUtil(object):
     def _apply(self, info=None, per_disc_numbering=False):
@@ -623,7 +718,6 @@ class ApplyTestUtil(object):
             mapping[i] = t
         config['per_disc_numbering'] = per_disc_numbering
         autotag.apply_metadata(info, mapping)
-
 
 class ApplyTest(_common.TestCase, ApplyTestUtil):
     def setUp(self):
@@ -635,7 +729,7 @@ class ApplyTest(_common.TestCase, ApplyTestUtil):
         trackinfo = []
         trackinfo.append(TrackInfo(
             u'oneNew',
-            u'dfa939ec-118c-4d0f-84a0-60f3d1e6522c',
+            'dfa939ec-118c-4d0f-84a0-60f3d1e6522c',
             medium=1,
             medium_index=1,
             medium_total=1,
@@ -645,23 +739,23 @@ class ApplyTest(_common.TestCase, ApplyTestUtil):
         ))
         trackinfo.append(TrackInfo(
             u'twoNew',
-            u'40130ed1-a27c-42fd-a328-1ebefb6caef4',
+            '40130ed1-a27c-42fd-a328-1ebefb6caef4',
             medium=2,
             medium_index=1,
             index=2,
             medium_total=1,
         ))
         self.info = AlbumInfo(
-            tracks=trackinfo,
-            artist=u'artistNew',
-            album=u'albumNew',
-            album_id='7edb51cb-77d6-4416-a23c-3a8c2994a2c7',
-            artist_id='a6623d39-2d8e-4f70-8242-0a9553b91e50',
-            artist_credit=u'albumArtistCredit',
-            artist_sort=u'albumArtistSort',
-            albumtype=u'album',
-            va=False,
-            mediums=2,
+            tracks = trackinfo,
+            artist = u'artistNew',
+            album = u'albumNew',
+            album_id = '7edb51cb-77d6-4416-a23c-3a8c2994a2c7',
+            artist_id = 'a6623d39-2d8e-4f70-8242-0a9553b91e50',
+            artist_credit = u'albumArtistCredit',
+            artist_sort = u'albumArtistSort',
+            albumtype = u'album',
+            va = False,
+            mediums = 2,
         )
 
     def test_titles_applied(self):
@@ -709,7 +803,7 @@ class ApplyTest(_common.TestCase, ApplyTestUtil):
     def test_mb_trackid_applied(self):
         self._apply()
         self.assertEqual(self.items[0].mb_trackid,
-                         'dfa939ec-118c-4d0f-84a0-60f3d1e6522c')
+                        'dfa939ec-118c-4d0f-84a0-60f3d1e6522c')
         self.assertEqual(self.items[1].mb_trackid,
                          '40130ed1-a27c-42fd-a328-1ebefb6caef4')
 
@@ -730,7 +824,7 @@ class ApplyTest(_common.TestCase, ApplyTestUtil):
         my_info = copy.deepcopy(self.info)
         self._apply(info=my_info)
         self.assertEqual(self.items[0].artist, 'artistNew')
-        self.assertEqual(self.items[1].artist, 'artistNew')
+        self.assertEqual(self.items[0].artist, 'artistNew')
 
     def test_album_artist_overriden_by_nonempty_track_artist(self):
         my_info = copy.deepcopy(self.info)
@@ -789,14 +883,6 @@ class ApplyTest(_common.TestCase, ApplyTestUtil):
         self.assertEqual(self.items[0].month, 2)
         self.assertEqual(self.items[0].day, 3)
 
-    def test_data_source_applied(self):
-        my_info = copy.deepcopy(self.info)
-        my_info.data_source = 'MusicBrainz'
-        self._apply(info=my_info)
-
-        self.assertEqual(self.items[0].data_source, 'MusicBrainz')
-
-
 class ApplyCompilationTest(_common.TestCase, ApplyTestUtil):
     def setUp(self):
         super(ApplyCompilationTest, self).setUp()
@@ -807,25 +893,26 @@ class ApplyCompilationTest(_common.TestCase, ApplyTestUtil):
         trackinfo = []
         trackinfo.append(TrackInfo(
             u'oneNew',
-            u'dfa939ec-118c-4d0f-84a0-60f3d1e6522c',
+            'dfa939ec-118c-4d0f-84a0-60f3d1e6522c',
             u'artistOneNew',
-            u'a05686fc-9db2-4c23-b99e-77f5db3e5282',
+            'a05686fc-9db2-4c23-b99e-77f5db3e5282',
             index=1,
         ))
         trackinfo.append(TrackInfo(
             u'twoNew',
-            u'40130ed1-a27c-42fd-a328-1ebefb6caef4',
+            '40130ed1-a27c-42fd-a328-1ebefb6caef4',
             u'artistTwoNew',
-            u'80b3cf5e-18fe-4c59-98c7-e5bb87210710',
+            '80b3cf5e-18fe-4c59-98c7-e5bb87210710',
             index=2,
         ))
         self.info = AlbumInfo(
-            tracks=trackinfo,
-            artist=u'variousNew',
-            album=u'albumNew',
-            album_id='3b69ea40-39b8-487f-8818-04b6eff8c21a',
-            artist_id='89ad4ac3-39f7-470e-963a-56509c546377',
-            albumtype=u'compilation',
+            tracks = trackinfo,
+            artist = u'variousNew',
+            album = u'albumNew',
+            album_id = '3b69ea40-39b8-487f-8818-04b6eff8c21a',
+            artist_id = '89ad4ac3-39f7-470e-963a-56509c546377',
+            albumtype = u'compilation',
+            va = False,
         )
 
     def test_album_and_track_artists_separate(self):
@@ -858,7 +945,6 @@ class ApplyCompilationTest(_common.TestCase, ApplyTestUtil):
         self.assertTrue(self.items[0].comp)
         self.assertTrue(self.items[1].comp)
 
-
 class StringDistanceTest(unittest.TestCase):
     def test_equal_strings(self):
         dist = string_dist(u'Some String', u'Some String')
@@ -879,17 +965,17 @@ class StringDistanceTest(unittest.TestCase):
     def test_leading_the_has_lower_weight(self):
         dist1 = string_dist(u'XXX Band Name', u'Band Name')
         dist2 = string_dist(u'The Band Name', u'Band Name')
-        self.assertTrue(dist2 < dist1)
+        self.assert_(dist2 < dist1)
 
     def test_parens_have_lower_weight(self):
         dist1 = string_dist(u'One .Two.', u'One')
         dist2 = string_dist(u'One (Two)', u'One')
-        self.assertTrue(dist2 < dist1)
+        self.assert_(dist2 < dist1)
 
     def test_brackets_have_lower_weight(self):
         dist1 = string_dist(u'One .Two.', u'One')
         dist2 = string_dist(u'One [Two]', u'One')
-        self.assertTrue(dist2 < dist1)
+        self.assert_(dist2 < dist1)
 
     def test_ep_label_has_zero_weight(self):
         dist = string_dist(u'My Song (EP)', u'My Song')
@@ -898,7 +984,7 @@ class StringDistanceTest(unittest.TestCase):
     def test_featured_has_lower_weight(self):
         dist1 = string_dist(u'My Song blah Someone', u'My Song')
         dist2 = string_dist(u'My Song feat Someone', u'My Song')
-        self.assertTrue(dist2 < dist1)
+        self.assert_(dist2 < dist1)
 
     def test_postfix_the(self):
         dist = string_dist(u'The Song Title', u'Song Title, The')
@@ -933,21 +1019,6 @@ class StringDistanceTest(unittest.TestCase):
     def test_accented_characters(self):
         dist = string_dist(u'\xe9\xe1\xf1', u'ean')
         self.assertEqual(dist, 0.0)
-
-
-class EnumTest(_common.TestCase):
-    """
-    Test Enum Subclasses defined in beets.util.enumeration
-    """
-    def test_ordered_enum(self):
-        OrderedEnumClass = match.OrderedEnum('OrderedEnumTest', ['a', 'b', 'c'])  # noqa
-        self.assertLess(OrderedEnumClass.a, OrderedEnumClass.b)
-        self.assertLess(OrderedEnumClass.a, OrderedEnumClass.c)
-        self.assertLess(OrderedEnumClass.b, OrderedEnumClass.c)
-        self.assertGreater(OrderedEnumClass.b, OrderedEnumClass.a)
-        self.assertGreater(OrderedEnumClass.c, OrderedEnumClass.a)
-        self.assertGreater(OrderedEnumClass.c, OrderedEnumClass.b)
-
 
 def suite():
     return unittest.TestLoader().loadTestsFromName(__name__)

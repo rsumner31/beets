@@ -4,19 +4,18 @@ Getting Started
 Welcome to `beets`_! This guide will help you begin using it to make your music
 collection better.
 
-.. _beets: http://beets.io/
+.. _beets: http://beets.radbox.org/
 
 Installing
 ----------
 
-You will need Python.
-Beets works on `Python 2.7`_ and Python 3.4 or later.
+You will need Python. (Beets is written for `Python 2.7`_, but it works with
+2.6 as well. Python 3.x is not yet supported.)
 
-.. _Python 2.7: http://www.python.org/download/
+.. _Python 2.7: http://www.python.org/download/releases/2.7.2/
 
-* **macOS** v10.7 (Lion) and later include Python 2.7 out of the box.
-  You can opt for Python 3 by installing it via `Homebrew`_:
-  ``brew install python3``
+* **Mac OS X** v10.7 (Lion) and 10.8 (Mountain Lion) include Python 2.7 out of
+  the box; Snow Leopard ships with Python 2.6.
 
 * On **Debian or Ubuntu**, depending on the version, beets is available as an
   official package (`Debian details`_, `Ubuntu details`_), so try typing:
@@ -36,36 +35,24 @@ Beets works on `Python 2.7`_ and Python 3.4 or later.
 
 * On **FreeBSD**, there's a `beets port`_ at ``audio/beets``.
 
-* On **OpenBSD**, beets can be installed with ``pkg_add beets``.
-
 * For **Slackware**, there's a `SlackBuild`_ available.
 
-* On **Fedora** 22 or later, there is a `DNF package`_ (or three)::
-
-      $ sudo dnf install beets beets-plugins beets-doc
-      
-* On **Solus**, run ``eopkg install beets``.
-
-* On **NixOS**, run ``nix-env -i beets``.
-
-.. _copr: https://copr.fedoraproject.org/coprs/afreof/beets/
-.. _dnf package: https://apps.fedoraproject.org/packages/beets
 .. _SlackBuild: http://slackbuilds.org/repository/14.1/multimedia/beets/
 .. _beets port: http://portsmon.freebsd.org/portoverview.py?category=audio&portname=beets
-.. _beets from AUR: https://aur.archlinux.org/packages/beets-git/
-.. _dev package: https://aur.archlinux.org/packages/beets-git/
+.. _beets from AUR: http://aur.archlinux.org/packages.php?ID=39577
+.. _dev package: http://aur.archlinux.org/packages.php?ID=48617
 .. _Debian details: http://packages.qa.debian.org/b/beets.html
 .. _Ubuntu details: https://launchpad.net/ubuntu/+source/beets
 .. _beets is in [community]: https://www.archlinux.org/packages/community/any/beets/
 
 If you have `pip`_, just say ``pip install beets`` (you might need ``sudo`` in
-front of that).
+front of that). On Arch, you'll need to use ``pip2`` instead of ``pip``.
 
 To install without pip, download beets from `its PyPI page`_ and run ``python
 setup.py install`` in the directory therein.
 
 .. _its PyPI page: http://pypi.python.org/pypi/beets#downloads
-.. _pip: http://www.pip-installer.org/
+.. _pip: http://pip.openplans.org/
 
 The best way to upgrade beets to a new version is by running ``pip install -U
 beets``. You may want to follow `@b33ts`_ on Twitter to hear about progress on
@@ -73,79 +60,63 @@ new versions.
 
 .. _@b33ts: http://twitter.com/b33ts
 
-Installing on macOS 10.11 and Higher
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Starting with version 10.11 (El Capitan), macOS has a new security feature
-called `System Integrity Protection`_ (SIP) that prevents you from modifying
-some parts of the system. This means that some ``pip`` commands may fail with
-a permissions error, even when you use ``sudo``. (You probably *won't* run
-into this if you've installed Python yourself with `Homebrew`_ or otherwise.)
-
-If this happens, you can install beets for the current user only (sans
-``sudo``) by typing ``pip install --user beets``. If you do that, you might want
-to add ``~/Library/Python/3.6/bin`` to your ``$PATH``.
-
-.. _System Integrity Protection: https://support.apple.com/en-us/HT204899
-.. _Homebrew: http://brew.sh
-
 Installing on Windows
 ^^^^^^^^^^^^^^^^^^^^^
 
 Installing beets on Windows can be tricky. Following these steps might help you
 get it right:
 
-1. If you don't have it, `install Python`_ (you want Python 3.6). The
-   installer should give you the option to "add Python to PATH." Check this
-   box. If you do that, you can skip the next step.
+1. If you don't have it, `install Python`_ (you want Python 2.7).
 
-2. If you haven't done so already, set your ``PATH`` environment variable to
+2. Install `Setuptools`_ from PyPI. To do this, scroll to the bottom of that
+   page and download the Windows installer (``.exe``, not ``.egg``) for your
+   Python version (for example: ``setuptools-0.6c11.win32-py2.7.exe``).
+
+3. If you haven't done so already, set your ``PATH`` environment variable to
    include Python and its scripts. To do so, you have to get the "Properties"
    window for "My Computer", then choose the "Advanced" tab, then hit the
    "Environment Variables" button, and then look for the ``PATH`` variable in
    the table. Add the following to the end of the variable's value:
-   ``;C:\Python36;C:\Python36\Scripts``. You may need to adjust these paths to
-   point to your Python installation.
+   ``;C:\Python27;C:\Python27\Scripts``.
 
-3. Now install beets by running: ``pip install beets``
+4. Open a command prompt and install pip by running: ``easy_install pip``
 
-4. You're all set! Type ``beet`` at the command prompt to make sure everything's
+5. Now install beets by running: ``pip install beets``
+
+6. You're all set! Type ``beet`` at the command prompt to make sure everything's
    in order.
 
 Windows users may also want to install a context menu item for importing files
-into beets. Download the `beets.reg`_ file and open it in a text file to make
-sure the paths to Python match your system. Then double-click the file add the
-necessary keys to your registry. You can then right-click a directory and
-choose "Import with beets".
+into beets. Just download and open `beets.reg`_ to add the necessary keys to the
+registry. You can then right-click a directory and choose "Import with beets".
+If Python is in a nonstandard location on your system, you may have to edit the
+command path manually.
 
 Because I don't use Windows myself, I may have missed something. If you have
 trouble or you have more detail to contribute here, please direct it to
 `the mailing list`_.
 
 .. _install Python: http://python.org/download/
-.. _beets.reg: https://github.com/beetbox/beets/blob/master/extra/beets.reg
-.. _install pip: http://www.pip-installer.org/en/latest/installing.html#install-pip
-.. _get-pip.py: https://raw.github.com/pypa/pip/master/contrib/get-pip.py
+.. _Setuptools: http://pypi.python.org/pypi/setuptools
+.. _beets.reg: https://github.com/sampsyo/beets/blob/master/extra/beets.reg
 
 
 Configuring
 -----------
 
 You'll want to set a few basic options before you start using beets. The
-:doc:`configuration </reference/config>` is stored in a text file. You
-can show its location by running ``beet config -p``, though it may not
-exist yet. Run ``beet config -e`` to edit the configuration in your
-favorite text editor. The file will start out empty, but here's good
-place to start::
+configuration is stored in a text file: on Unix-like OSes, the config file is
+at ``~/.config/beets/config.yaml``; on Windows, it's at
+``%APPDATA%\beets\config.yaml``. Create and edit the appropriate file with your
+favorite text editor. (You may need to create the enclosing directories also.)
+The file will start out empty, but here's good place to start::
 
     directory: ~/music
-    library: ~/data/musiclibrary.db
+    library: ~/data/musiclibrary.blb
 
 Change that first path to a directory where you'd like to keep your music. Then,
 for ``library``, choose a good place to keep a database file that keeps an index
-of your music. (The config's format is `YAML`_. You'll want to configure your
-text editor to use spaces, not real tabs, for indentation. Also, ``~`` means
-your home directory in these paths, even on Windows.)
+of your music.
 
 The default configuration assumes you want to start a new organized music folder
 (that ``directory`` above) and that you'll *copy* cleaned-up music into that
@@ -179,15 +150,8 @@ There are approximately six million other configuration options you can set
 here, including the directory and file naming scheme. See
 :doc:`/reference/config` for a full reference.
 
-.. _YAML: http://yaml.org/
-
 Importing Your Library
 ----------------------
-
-The next step is to import your music files into the beets library database.
-Because this can involve modifying files and moving them around, data loss is
-always a possibility, so now would be a good time to make sure you have a
-recent backup of all your music. We'll wait.
 
 There are two good ways to bring your existing library into beets. You can
 either: (a) quickly bring all your files with all their current metadata into
@@ -245,30 +209,21 @@ songs.  Thus::
     $ beet ls album:bird
     The Mae Shi - Terrorbird - Revelation Six
 
-By default, a search term will match any of a handful of :ref:`common
-attributes <keywordquery>` of songs.
-(They're
+As you can see, search terms by default search all attributes of songs. (They're
 also implicitly joined by ANDs: a track must match *all* criteria in order to
 match the query.) To narrow a search term to a particular metadata field, just
 put the field before the term, separated by a : character. So ``album:bird``
 only looks for ``bird`` in the "album" field of your songs. (Need to know more?
 :doc:`/reference/query/` will answer all your questions.)
 
-The ``beet list`` command also has an ``-a`` option, which searches for albums instead of songs::
+The ``beet list`` command has another useful option worth mentioning, ``-a``,
+which searches for albums instead of songs::
 
     $ beet ls -a forever
     Bon Iver - For Emma, Forever Ago
     Freezepop - Freezepop Forever
 
-There's also an ``-f`` option (for *format*) that lets you specify what gets displayed in the results of a search::
-
-    $ beet ls -a forever -f "[$format] $album ($year) - $artist - $title"
-    [MP3] For Emma, Forever Ago (2009) - Bon Iver - Flume
-    [AAC] Freezepop Forever (2011) - Freezepop - Harebrained Scheme
-
-In the format option, field references like `$format` and `$year` are filled
-in with data from each result. You can see a full list of available fields by
-running ``beet fields``.
+So handy!
 
 Beets also has a ``stats`` command, just in case you want to see how much music
 you have::
@@ -297,9 +252,8 @@ You can always get help using the ``beet help`` command. The plain ``beet help``
 command lists all the available commands; then, for example, ``beet help
 import`` gives more specific help about the ``import`` command.
 
-Please let me know what you think of beets via `the discussion board`_ or
+Please let me know what you think of beets via `the mailing list`_ or
 `Twitter`_.
 
 .. _the mailing list: http://groups.google.com/group/beets-users
-.. _the discussion board: http://discourse.beets.io
 .. _twitter: http://twitter.com/b33ts

@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -14,20 +13,15 @@
 # included in all copies or substantial portions of the Software.
 
 """Glue between metadata sources and the matching logic."""
-from __future__ import division, absolute_import, print_function
-
+import logging
 from collections import namedtuple
-from functools import total_ordering
 import re
 
-from beets import logging
 from beets import plugins
 from beets import config
-from beets.util import as_string
 from beets.autotag import mb
-from jellyfish import levenshtein_distance
+from beets.util import levenshtein
 from unidecode import unidecode
-import six
 
 log = logging.getLogger('beets')
 
@@ -107,7 +101,7 @@ class AlbumInfo(object):
     # Work around a bug in python-musicbrainz-ngs that causes some
     # strings to be bytes rather than Unicode.
     # https://github.com/alastair/python-musicbrainz-ngs/issues/85
-    def decode(self, codec='utf-8'):
+    def decode(self, codec='utf8'):
         """Ensure that all string attributes on this object, and the
         constituent `TrackInfo` objects, are decoded to Unicode.
         """
@@ -115,7 +109,7 @@ class AlbumInfo(object):
                     'catalognum', 'script', 'language', 'country',
                     'albumstatus', 'albumdisambig', 'artist_credit', 'media']:
             value = getattr(self, fld)
-            if isinstance(value, bytes):
+            if isinstance(value, str):
                 setattr(self, fld, value.decode(codec, 'ignore'))
 
         if self.tracks:
@@ -133,20 +127,12 @@ class TrackInfo(object):
     - ``artist_id``
     - ``length``: float: duration of the track in seconds
     - ``index``: position on the entire release
-    - ``media``: delivery mechanism (Vinyl, etc.)
     - ``medium``: the disc number this track appears on in the album
     - ``medium_index``: the track's position on the disc
     - ``medium_total``: the number of tracks on the item's disc
     - ``artist_sort``: name of the track artist for sorting
     - ``disctitle``: name of the individual medium (subtitle)
     - ``artist_credit``: Recording-specific artist name
-    - ``data_source``: The original data source (MusicBrainz, Discogs, etc.)
-    - ``data_url``: The data source release URL.
-    - ``lyricist``: individual track lyricist name
-    - ``composer``: individual track composer name
-    - ``composer_sort``: individual track composer sort name
-    - ``arranger`: individual track arranger name
-    - ``track_alt``: alternative track number (tape, vinyl, etc.)
 
     Only ``title`` and ``track_id`` are required. The rest of the fields
     may be None. The indices ``index``, ``medium``, and ``medium_index``
@@ -155,16 +141,13 @@ class TrackInfo(object):
     def __init__(self, title, track_id, artist=None, artist_id=None,
                  length=None, index=None, medium=None, medium_index=None,
                  medium_total=None, artist_sort=None, disctitle=None,
-                 artist_credit=None, data_source=None, data_url=None,
-                 media=None, lyricist=None, composer=None, composer_sort=None,
-                 arranger=None, track_alt=None):
+                 artist_credit=None, data_source=None, data_url=None):
         self.title = title
         self.track_id = track_id
         self.artist = artist
         self.artist_id = artist_id
         self.length = length
         self.index = index
-        self.media = media
         self.medium = medium
         self.medium_index = medium_index
         self.medium_total = medium_total
@@ -173,21 +156,16 @@ class TrackInfo(object):
         self.artist_credit = artist_credit
         self.data_source = data_source
         self.data_url = data_url
-        self.lyricist = lyricist
-        self.composer = composer
-        self.composer_sort = composer_sort
-        self.arranger = arranger
-        self.track_alt = track_alt
 
     # As above, work around a bug in python-musicbrainz-ngs.
-    def decode(self, codec='utf-8'):
+    def decode(self, codec='utf8'):
         """Ensure that all string attributes on this object are decoded
         to Unicode.
         """
         for fld in ['title', 'artist', 'medium', 'artist_sort', 'disctitle',
-                    'artist_credit', 'media']:
+                    'artist_credit']:
             value = getattr(self, fld)
-            if isinstance(value, bytes):
+            if isinstance(value, str):
                 setattr(self, fld, value.decode(codec, 'ignore'))
 
 
@@ -217,15 +195,13 @@ def _string_dist_basic(str1, str2):
     transliteration/lowering to ASCII characters. Normalized by string
     length.
     """
-    assert isinstance(str1, six.text_type)
-    assert isinstance(str2, six.text_type)
-    str1 = as_string(unidecode(str1))
-    str2 = as_string(unidecode(str2))
+    str1 = unidecode(str1)
+    str2 = unidecode(str2)
     str1 = re.sub(r'[^a-z0-9]', '', str1.lower())
     str2 = re.sub(r'[^a-z0-9]', '', str2.lower())
     if not str1 and not str2:
         return 0.0
-    return levenshtein_distance(str1, str2) / float(max(len(str1), len(str2)))
+    return levenshtein(str1, str2) / float(max(len(str1), len(str2)))
 
 
 def string_dist(str1, str2):
@@ -233,10 +209,8 @@ def string_dist(str1, str2):
     an edit distance, normalized by the string length, with a number of
     tweaks that reflect intuition about text.
     """
-    if str1 is None and str2 is None:
-        return 0.0
-    if str1 is None or str2 is None:
-        return 1.0
+    if str1 is None and str2 is None: return 0.0
+    if str1 is None or str2 is None:  return 1.0
 
     str1 = str1.lower()
     str2 = str2.lower()
@@ -302,8 +276,6 @@ class LazyClassProperty(object):
         return self.value
 
 
-@total_ordering
-@six.python_2_unicode_compatible
 class Distance(object):
     """Keeps track of multiple distance penalties. Provides a single
     weighted distance for all penalties as well as a weighted distance
@@ -312,8 +284,9 @@ class Distance(object):
     def __init__(self):
         self._penalties = {}
 
+
     @LazyClassProperty
-    def _weights(cls):  # noqa
+    def _weights(cls):
         """A dictionary from keys to floating-point weights.
         """
         weights_view = config['match']['distance_weights']
@@ -321,6 +294,7 @@ class Distance(object):
         for key in weights_view.keys():
             weights[key] = weights_view[key].as_number()
         return weights
+
 
     # Access the components and their aggregates.
 
@@ -339,7 +313,7 @@ class Distance(object):
         """Return the maximum distance penalty (normalization factor).
         """
         dist_max = 0.0
-        for key, penalty in self._penalties.items():
+        for key, penalty in self._penalties.iteritems():
             dist_max += len(penalty) * self._weights[key]
         return dist_max
 
@@ -348,7 +322,7 @@ class Distance(object):
         """Return the raw (denormalized) distance.
         """
         dist_raw = 0.0
-        for key, penalty in self._penalties.items():
+        for key, penalty in self._penalties.iteritems():
             dist_raw += sum(penalty) * self._weights[key]
         return dist_raw
 
@@ -365,33 +339,22 @@ class Distance(object):
         # Convert distance into a negative float we can sort items in
         # ascending order (for keys, when the penalty is equal) and
         # still get the items with the biggest distance first.
-        return sorted(
-            list_,
-            key=lambda key_and_dist: (-key_and_dist[1], key_and_dist[0])
-        )
+        return sorted(list_, key=lambda (key, dist): (0 - dist, key))
 
-    def __hash__(self):
-        return id(self)
-
-    def __eq__(self, other):
-        return self.distance == other
 
     # Behave like a float.
 
-    def __lt__(self, other):
-        return self.distance < other
+    def __cmp__(self, other):
+        return cmp(self.distance, other)
 
     def __float__(self):
         return self.distance
-
     def __sub__(self, other):
         return self.distance - other
 
     def __rsub__(self, other):
         return other - self.distance
 
-    def __str__(self):
-        return "{0:.2f}".format(self.distance)
 
     # Behave like a dict.
 
@@ -418,10 +381,10 @@ class Distance(object):
         """
         if not isinstance(dist, Distance):
             raise ValueError(
-                u'`dist` must be a Distance object, not {0}'.format(type(dist))
-            )
-        for key, penalties in dist._penalties.items():
+                    '`dist` must be a Distance object. It is: %r' % dist)
+        for key, penalties in dist._penalties.iteritems():
             self._penalties.setdefault(key, []).extend(penalties)
+
 
     # Adding components.
 
@@ -442,8 +405,7 @@ class Distance(object):
         """
         if not 0.0 <= dist <= 1.0:
             raise ValueError(
-                u'`dist` must be between 0.0 and 1.0, not {0}'.format(dist)
-            )
+                    '`dist` must be between 0.0 and 1.0. It is: %r' % dist)
         self._penalties.setdefault(key, []).append(dist)
 
     def add_equality(self, key, value, options):
@@ -551,29 +513,20 @@ def track_for_mbid(recording_id):
         exc.log(log)
 
 
-@plugins.notify_info_yielded(u'albuminfo_received')
 def albums_for_id(album_id):
     """Get a list of albums for an ID."""
-    a = album_for_mbid(album_id)
-    if a:
-        yield a
-    for a in plugins.album_for_id(album_id):
-        if a:
-            yield a
+    candidates = [album_for_mbid(album_id)]
+    candidates.extend(plugins.album_for_id(album_id))
+    return filter(None, candidates)
 
 
-@plugins.notify_info_yielded(u'trackinfo_received')
 def tracks_for_id(track_id):
     """Get a list of tracks for an ID."""
-    t = track_for_mbid(track_id)
-    if t:
-        yield t
-    for t in plugins.track_for_id(track_id):
-        if t:
-            yield t
+    candidates = [track_for_mbid(track_id)]
+    candidates.extend(plugins.track_for_id(track_id))
+    return filter(None, candidates)
 
 
-@plugins.notify_info_yielded(u'albuminfo_received')
 def album_candidates(items, artist, album, va_likely):
     """Search for album matches. ``items`` is a list of Item objects
     that make up the album. ``artist`` and ``album`` are the respective
@@ -581,42 +534,43 @@ def album_candidates(items, artist, album, va_likely):
     entered by the user. ``va_likely`` is a boolean indicating whether
     the album is likely to be a "various artists" release.
     """
+    out = []
+
     # Base candidates if we have album and artist to match.
     if artist and album:
         try:
-            for candidate in mb.match_album(artist, album, len(items)):
-                yield candidate
+            out.extend(mb.match_album(artist, album, len(items)))
         except mb.MusicBrainzAPIError as exc:
             exc.log(log)
 
     # Also add VA matches from MusicBrainz where appropriate.
     if va_likely and album:
         try:
-            for candidate in mb.match_album(None, album, len(items)):
-                yield candidate
+            out.extend(mb.match_album(None, album, len(items)))
         except mb.MusicBrainzAPIError as exc:
             exc.log(log)
 
     # Candidates from plugins.
-    for candidate in plugins.candidates(items, artist, album, va_likely):
-        yield candidate
+    out.extend(plugins.candidates(items, artist, album, va_likely))
+
+    return out
 
 
-@plugins.notify_info_yielded(u'trackinfo_received')
 def item_candidates(item, artist, title):
     """Search for item matches. ``item`` is the Item to be matched.
     ``artist`` and ``title`` are strings and either reflect the item or
     are specified by the user.
     """
+    out = []
 
     # MusicBrainz candidates.
     if artist and title:
         try:
-            for candidate in mb.match_track(artist, title):
-                yield candidate
+            out.extend(mb.match_track(artist, title))
         except mb.MusicBrainzAPIError as exc:
             exc.log(log)
 
     # Plugin candidates.
-    for candidate in plugins.item_candidates(item, artist, title):
-        yield candidate
+    out.extend(plugins.item_candidates(item, artist, title))
+
+    return out

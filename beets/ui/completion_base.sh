@@ -70,7 +70,7 @@ _beet_dispatch() {
 
   # Replace command shortcuts
   if [[ -n $cmd ]] && _list_include_item "$aliases" "$cmd"; then
-    eval "cmd=\$alias__${cmd//-/_}"
+    eval "cmd=\$alias__$cmd"
   fi
 
   case $cmd in
@@ -94,8 +94,8 @@ _beet_dispatch() {
 _beet_complete() {
   if [[ $cur == -* ]]; then
     local opts flags completions
-    eval "opts=\$opts__${cmd//-/_}"
-    eval "flags=\$flags__${cmd//-/_}"
+    eval "opts=\$opts__$cmd"
+    eval "flags=\$flags__$cmd"
     completions="${flags___common} ${opts} ${flags}"
     COMPREPLY+=( $(compgen -W "$completions"  -- $cur) )
   else
@@ -129,7 +129,7 @@ _beet_complete_global() {
     COMPREPLY+=( $(compgen -W "$completions" -- $cur) )
   elif [[ -n $cur ]] && _list_include_item "$aliases" "$cur"; then
     local cmd
-    eval "cmd=\$alias__${cur//-/_}"
+    eval "cmd=\$alias__$cur"
     COMPREPLY+=( "$cmd" )
   else
     COMPREPLY+=( $(compgen -W "$commands" -- $cur) )
@@ -138,7 +138,7 @@ _beet_complete_global() {
 
 _beet_complete_query() {
   local opts
-  eval "opts=\$opts__${cmd//-/_}"
+  eval "opts=\$opts__$cmd"
 
   if [[ $cur == -* ]] || _list_include_item "$opts" "$prev"; then
     _beet_complete

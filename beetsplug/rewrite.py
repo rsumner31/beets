@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -16,15 +15,16 @@
 """Uses user-specified rewriting rules to canonicalize names for path
 formats.
 """
-from __future__ import division, absolute_import, print_function
-
 import re
+import logging
 from collections import defaultdict
 
 from beets.plugins import BeetsPlugin
 from beets import ui
 from beets import library
+from beets import config
 
+log = logging.getLogger('beets')
 
 def rewriter(field, rules):
     """Create a template field function that rewrites the given field
@@ -41,7 +41,6 @@ def rewriter(field, rules):
         return value
     return fieldfunc
 
-
 class RewritePlugin(BeetsPlugin):
     def __init__(self):
         super(RewritePlugin, self).__init__()
@@ -51,15 +50,15 @@ class RewritePlugin(BeetsPlugin):
         # Gather all the rewrite rules for each field.
         rules = defaultdict(list)
         for key, view in self.config.items():
-            value = view.as_str()
+            value = view.get(unicode)
             try:
                 fieldname, pattern = key.split(None, 1)
             except ValueError:
-                raise ui.UserError(u"invalid rewrite specification")
+                raise ui.UserError("invalid rewrite specification")
             if fieldname not in library.Item._fields:
-                raise ui.UserError(u"invalid field name (%s) in rewriter" %
+                raise ui.UserError("invalid field name (%s) in rewriter" %
                                    fieldname)
-            self._log.debug(u'adding template field {0}', key)
+            log.debug(u'adding template field %s' % key)
             pattern = re.compile(pattern.lower())
             rules[fieldname].append((pattern, value))
             if fieldname == 'artist':
@@ -68,8 +67,5 @@ class RewritePlugin(BeetsPlugin):
                 rules['albumartist'].append((pattern, value))
 
         # Replace each template field with the new rewriter function.
-        for fieldname, fieldrules in rules.items():
-            getter = rewriter(fieldname, fieldrules)
-            self.template_fields[fieldname] = getter
-            if fieldname in library.Album._fields:
-                self.album_template_fields[fieldname] = getter
+        for fieldname, fieldrules in rules.iteritems():
+            self.template_fields[fieldname] = rewriter(fieldname, fieldrules)

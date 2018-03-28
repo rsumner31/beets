@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -14,40 +13,51 @@
 # included in all copies or substantial portions of the Software.
 
 """Allows beets to embed album art into file metadata."""
-from __future__ import division, absolute_import, print_function
-
-import os.path
+import logging
+import imghdr
 
 from beets.plugins import BeetsPlugin
+from beets import mediafile
 from beets import ui
-from beets.ui import print_, decargs
-from beets.util import syspath, normpath, displayable_path, bytestring_path
+from beets.ui import decargs
+from beets.util import syspath, normpath, displayable_path
 from beets.util.artresizer import ArtResizer
 from beets import config
-from beets import art
 
+log = logging.getLogger('beets')
 
-def _confirm(objs, album):
-    """Show the list of affected objects (items or albums) and confirm
-    that the user wants to modify their artwork.
-
-    `album` is a Boolean indicating whether these are albums (as opposed
-    to items).
+def _embed(path, items, maxwidth=0):
+    """Embed an image file, located at `path`, into each item.
     """
-    noun = u'album' if album else u'file'
-    prompt = u'Modify artwork for {} {}{} (Y/n)?'.format(
-        len(objs),
-        noun,
-        u's' if len(objs) > 1 else u''
-    )
+    if maxwidth:
+        path = ArtResizer.shared.resize(maxwidth, syspath(path))
 
-    # Show all the items or albums.
-    for obj in objs:
-        print_(format(obj))
+    data = open(syspath(path), 'rb').read()
+    kindstr = imghdr.what(None, data)
+    if kindstr is None:
+        log.error(u'Could not embed art of unkown type: {0}'.format(
+            displayable_path(path)
+        ))
+        return
+    elif kindstr not in ('jpeg', 'png'):
+        log.error(u'Image type {0} is not allowed as cover art: {1}'.format(
+            kindstr, displayable_path(path)
+        ))
+        return
 
-    # Confirm with user.
-    return ui.input_yn(prompt)
+    # Add art to each file.
+    log.debug('Embedding album art.')
 
+    for item in items:
+        try:
+            f = mediafile.MediaFile(syspath(item.path))
+        except mediafile.UnreadableFileError as exc:
+            log.warn('Could not embed art in {0}: {1}'.format(
+                displayable_path(item.path), exc
+            ))
+            continue
+        f.art = data
+        f.save(config['id3v23'].get(bool))
 
 class EmbedCoverArtPlugin(BeetsPlugin):
     """Allows albumart to be embedded into the actual files.
@@ -57,143 +67,131 @@ class EmbedCoverArtPlugin(BeetsPlugin):
         self.config.add({
             'maxwidth': 0,
             'auto': True,
-            'compare_threshold': 0,
-            'ifempty': False,
-            'remove_art_file': False
         })
-
-        if self.config['maxwidth'].get(int) and not ArtResizer.shared.local:
+        if self.config['maxwidth'].get(int) and \
+                not ArtResizer.shared.local:
             self.config['maxwidth'] = 0
-            self._log.warning(u"ImageMagick or PIL not found; "
-                              u"'maxwidth' option ignored")
-        if self.config['compare_threshold'].get(int) and not \
-                ArtResizer.shared.can_compare:
-            self.config['compare_threshold'] = 0
-            self._log.warning(u"ImageMagick 6.8.7 or higher not installed; "
-                              u"'compare_threshold' option ignored")
-
-        self.register_listener('art_set', self.process_album)
+            log.warn("embedart: ImageMagick or PIL not found; "
+                     "'maxwidth' option ignored")
 
     def commands(self):
         # Embed command.
-        embed_cmd = ui.Subcommand(
-            'embedart', help=u'embed image files into file metadata'
-        )
-        embed_cmd.parser.add_option(
-            u'-f', u'--file', metavar='PATH', help=u'the image file to embed'
-        )
-        embed_cmd.parser.add_option(
-            u"-y", u"--yes", action="store_true", help=u"skip confirmation"
-        )
-        maxwidth = self.config['maxwidth'].get(int)
-        compare_threshold = self.config['compare_threshold'].get(int)
-        ifempty = self.config['ifempty'].get(bool)
-
+        embed_cmd = ui.Subcommand('embedart',
+            help='embed image files into file metadata')
+        embed_cmd.parser.add_option('-f', '--file', metavar='PATH',
+            help='the image file to embed')
         def embed_func(lib, opts, args):
             if opts.file:
                 imagepath = normpath(opts.file)
-                if not os.path.isfile(syspath(imagepath)):
-                    raise ui.UserError(u'image file {0} not found'.format(
-                        displayable_path(imagepath)
-                    ))
-
-                items = lib.items(decargs(args))
-
-                # Confirm with user.
-                if not opts.yes and not _confirm(items, not opts.file):
-                    return
-
-                for item in items:
-                    art.embed_item(self._log, item, imagepath, maxwidth, None,
-                                   compare_threshold, ifempty)
+                embed(lib, imagepath, decargs(args))
             else:
-                albums = lib.albums(decargs(args))
-
-                # Confirm with user.
-                if not opts.yes and not _confirm(albums, not opts.file):
-                    return
-
-                for album in albums:
-                    art.embed_album(self._log, album, maxwidth, False,
-                                    compare_threshold, ifempty)
-                    self.remove_artfile(album)
-
+                embed_current(lib, decargs(args))
         embed_cmd.func = embed_func
 
         # Extract command.
-        extract_cmd = ui.Subcommand(
-            'extractart',
-            help=u'extract an image from file metadata',
-        )
-        extract_cmd.parser.add_option(
-            u'-o', dest='outpath',
-            help=u'image output file',
-        )
-        extract_cmd.parser.add_option(
-            u'-n', dest='filename',
-            help=u'image filename to create for all matched albums',
-        )
-        extract_cmd.parser.add_option(
-            '-a', dest='associate', action='store_true',
-            help='associate the extracted images with the album',
-        )
-
+        extract_cmd = ui.Subcommand('extractart',
+                                    help='extract an image from file metadata')
+        extract_cmd.parser.add_option('-o', dest='outpath',
+                                      help='image output file')
         def extract_func(lib, opts, args):
-            if opts.outpath:
-                art.extract_first(self._log, normpath(opts.outpath),
-                                  lib.items(decargs(args)))
-            else:
-                filename = bytestring_path(opts.filename or
-                                           config['art_filename'].get())
-                if os.path.dirname(filename) != b'':
-                    self._log.error(
-                        u"Only specify a name rather than a path for -n")
-                    return
-                for album in lib.albums(decargs(args)):
-                    artpath = normpath(os.path.join(album.path, filename))
-                    artpath = art.extract_first(self._log, artpath,
-                                                album.items())
-                    if artpath and opts.associate:
-                        album.set_art(artpath)
-                        album.store()
+            outpath = normpath(opts.outpath or 'cover')
+            extract(lib, outpath, decargs(args))
         extract_cmd.func = extract_func
 
         # Clear command.
-        clear_cmd = ui.Subcommand(
-            'clearart',
-            help=u'remove images from file metadata',
-        )
-        clear_cmd.parser.add_option(
-            u"-y", u"--yes", action="store_true", help=u"skip confirmation"
-        )
-
+        clear_cmd = ui.Subcommand('clearart',
+                                  help='remove images from file metadata')
         def clear_func(lib, opts, args):
-            items = lib.items(decargs(args))
-            # Confirm with user.
-            if not opts.yes and not _confirm(items, False):
-                return
-            art.clear(self._log, lib, decargs(args))
+            clear(lib, decargs(args))
         clear_cmd.func = clear_func
 
         return [embed_cmd, extract_cmd, clear_cmd]
 
-    def process_album(self, album):
-        """Automatically embed art after art has been set
-        """
-        if self.config['auto'] and ui.should_write():
-            max_width = self.config['maxwidth'].get(int)
-            art.embed_album(self._log, album, max_width, True,
-                            self.config['compare_threshold'].get(int),
-                            self.config['ifempty'].get(bool))
-            self.remove_artfile(album)
+# "embedart" command with --file argument.
+def embed(lib, imagepath, query):
+    albums = lib.albums(query)
+    for i_album in albums:
+        album = i_album
+        break
+    else:
+        log.error('No album matches query.')
+        return
 
-    def remove_artfile(self, album):
-        """Possibly delete the album art file for an album (if the
-        appropriate configuration option is enabled.
-        """
-        if self.config['remove_art_file'] and album.artpath:
-            if os.path.isfile(album.artpath):
-                self._log.debug(u'Removing album art file for {0}', album)
-                os.remove(album.artpath)
-                album.artpath = None
-                album.store()
+    log.info(u'Embedding album art into {0.albumartist} - {0.album}.'.format(
+        album
+    ))
+    _embed(imagepath, album.items(),
+           config['embedart']['maxwidth'].get(int))
+
+# "embedart" command without explicit file.
+def embed_current(lib, query):
+    albums = lib.albums(query)
+    for album in albums:
+        if not album.artpath:
+            log.info(u'No album art present: {0} - {1}'.
+                     format(album.albumartist, album.album))
+            continue
+
+        log.info(u'Embedding album art into {0} - {1}'.
+                 format(album.albumartist, album.album))
+        _embed(album.artpath, album.items(),
+               config['embedart']['maxwidth'].get(int))
+
+# "extractart" command.
+def extract(lib, outpath, query):
+    items = lib.items(query)
+    for i_item in items:
+        item = i_item
+        break
+    else:
+        log.error('No item matches query.')
+        return
+
+    # Extract the art.
+    try:
+        mf = mediafile.MediaFile(syspath(item.path))
+    except mediafile.UnreadableFileError as exc:
+        log.error(u'Could not extract art from {0}: {1}'.format(
+            displayable_path(item.path), exc
+        ))
+        return
+
+    art = mf.art
+    if not art:
+        log.error('No album art present in %s - %s.' %
+                  (item.artist, item.title))
+        return
+
+    # Add an extension to the filename.
+    ext = imghdr.what(None, h=art)
+    if not ext:
+        log.error('Unknown image type.')
+        return
+    outpath += '.' + ext
+
+    log.info(u'Extracting album art from: {0.artist} - {0.title}\n'
+             u'To: {1}'.format(item, displayable_path(outpath)))
+    with open(syspath(outpath), 'wb') as f:
+        f.write(art)
+
+# "clearart" command.
+def clear(lib, query):
+    log.info('Clearing album art from items:')
+    for item in lib.items(query):
+        log.info(u'%s - %s' % (item.artist, item.title))
+        try:
+            mf = mediafile.MediaFile(syspath(item.path))
+        except mediafile.UnreadableFileError as exc:
+            log.error(u'Could not clear art from {0}: {1}'.format(
+                displayable_path(item.path), exc
+            ))
+            continue
+        mf.art = None
+        mf.save(config['id3v23'].get(bool))
+
+# Automatically embed art into imported albums.
+@EmbedCoverArtPlugin.listen('album_imported')
+def album_imported(lib, album):
+    if album.artpath and config['embedart']['auto']:
+        _embed(album.artpath, album.items(),
+               config['embedart']['maxwidth'].get(int))

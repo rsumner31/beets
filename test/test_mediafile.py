@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -16,18 +15,15 @@
 """Automatically-generated blanket testing for the MediaFile metadata
 layer.
 """
-from __future__ import division, absolute_import, print_function
-
 import os
 import shutil
+import tempfile
 import datetime
 import time
-import unittest
-from six import assertCountEqual
 
-from test import _common
-from beets.mediafile import MediaFile, Image, \
-    ImageType, CoverArtField, UnreadableFileError
+import _common
+from _common import unittest
+from beets.mediafile import MediaFile, Image
 
 
 class ArtTestMixin(object):
@@ -37,8 +33,7 @@ class ArtTestMixin(object):
     @property
     def png_data(self):
         if not self._png_data:
-            image_file = os.path.join(_common.RSRC, b'image-2x3.png')
-            with open(image_file, 'rb') as f:
+            with open(os.path.join(_common.RSRC, 'image-2x3.png'), 'rb') as f:
                 self._png_data = f.read()
         return self._png_data
     _png_data = None
@@ -46,8 +41,7 @@ class ArtTestMixin(object):
     @property
     def jpg_data(self):
         if not self._jpg_data:
-            image_file = os.path.join(_common.RSRC, b'image-2x3.jpg')
-            with open(image_file, 'rb') as f:
+            with open(os.path.join(_common.RSRC, 'image-2x3.jpg'), 'rb') as f:
                 self._jpg_data = f.read()
         return self._jpg_data
     _jpg_data = None
@@ -55,8 +49,7 @@ class ArtTestMixin(object):
     @property
     def tiff_data(self):
         if not self._jpg_data:
-            image_file = os.path.join(_common.RSRC, b'image-2x3.tiff')
-            with open(image_file, 'rb') as f:
+            with open(os.path.join(_common.RSRC, 'image-2x3.tiff'), 'rb') as f:
                 self._jpg_data = f.read()
         return self._jpg_data
     _jpg_data = None
@@ -77,20 +70,6 @@ class ArtTestMixin(object):
         mediafile = MediaFile(mediafile.path)
         self.assertEqual(mediafile.art, self.jpg_data)
 
-    def test_delete_art(self):
-        mediafile = self._mediafile_fixture('empty')
-        mediafile.art = self.jpg_data
-        mediafile.save()
-
-        mediafile = MediaFile(mediafile.path)
-        self.assertIsNotNone(mediafile.art)
-
-        del mediafile.art
-        mediafile.save()
-
-        mediafile = MediaFile(mediafile.path)
-        self.assertIsNone(mediafile.art)
-
 
 class ImageStructureTestMixin(ArtTestMixin):
     """Test reading and writing multiple image tags.
@@ -108,19 +87,19 @@ class ImageStructureTestMixin(ArtTestMixin):
         image = next(i for i in mediafile.images
                      if i.mime_type == 'image/png')
         self.assertEqual(image.data, self.png_data)
-        self.assertExtendedImageAttributes(image, desc=u'album cover',
-                                           type=ImageType.front)
+        self.assertExtendedImageAttributes(image, desc='album cover',
+                                           type=Image.TYPES.front)
 
         image = next(i for i in mediafile.images
                      if i.mime_type == 'image/jpeg')
         self.assertEqual(image.data, self.jpg_data)
-        self.assertExtendedImageAttributes(image, desc=u'the artist',
-                                           type=ImageType.artist)
+        self.assertExtendedImageAttributes(image, desc='the artist',
+                                           type=Image.TYPES.artist)
 
     def test_set_image_structure(self):
         mediafile = self._mediafile_fixture('empty')
-        image = Image(data=self.png_data, desc=u'album cover',
-                      type=ImageType.front)
+        image = Image(data=self.png_data, desc='album cover',
+                      type=Image.TYPES.front)
         mediafile.images = [image]
         mediafile.save()
 
@@ -130,58 +109,36 @@ class ImageStructureTestMixin(ArtTestMixin):
         image = mediafile.images[0]
         self.assertEqual(image.data, self.png_data)
         self.assertEqual(image.mime_type, 'image/png')
-        self.assertExtendedImageAttributes(image, desc=u'album cover',
-                                           type=ImageType.front)
+        self.assertExtendedImageAttributes(image, desc='album cover',
+                                           type=Image.TYPES.front)
 
     def test_add_image_structure(self):
         mediafile = self._mediafile_fixture('image')
         self.assertEqual(len(mediafile.images), 2)
 
-        image = Image(data=self.png_data, desc=u'the composer',
-                      type=ImageType.composer)
+        image = Image(data=self.png_data, desc='the composer',
+                         type=Image.TYPES.composer)
         mediafile.images += [image]
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
         self.assertEqual(len(mediafile.images), 3)
 
-        images = (i for i in mediafile.images if i.desc == u'the composer')
-        image = next(images, None)
-        self.assertExtendedImageAttributes(
-            image, desc=u'the composer', type=ImageType.composer
-        )
+        image = next(
+           (i for i in mediafile.images if i.desc == 'the composer'), None)
+        self.assertExtendedImageAttributes(image,
+                desc='the composer', type=Image.TYPES.composer)
 
-    def test_delete_image_structures(self):
-        mediafile = self._mediafile_fixture('image')
-        self.assertEqual(len(mediafile.images), 2)
-
-        del mediafile.images
-        mediafile.save()
-
-        mediafile = MediaFile(mediafile.path)
-        self.assertEqual(len(mediafile.images), 0)
-
-    def test_guess_cover(self):
-        mediafile = self._mediafile_fixture('image')
-        self.assertEqual(len(mediafile.images), 2)
-        cover = CoverArtField.guess_cover_image(mediafile.images)
-        self.assertEqual(cover.desc, u'album cover')
-        self.assertEqual(mediafile.art, cover.data)
-
-    def assertExtendedImageAttributes(self, image, **kwargs):  # noqa
+    def assertExtendedImageAttributes(self, image, **kwargs):
         """Ignore extended image attributes in the base tests.
         """
         pass
 
 
 class ExtendedImageStructureTestMixin(ImageStructureTestMixin):
-    """Checks for additional attributes in the image structure.
+    """Checks for additional attributes in the image structure."""
 
-    Like the base `ImageStructureTestMixin`, per-format test classes
-    should include this mixin to add image-related tests.
-    """
-
-    def assertExtendedImageAttributes(self, image, desc=None, type=None):  # noqa
+    def assertExtendedImageAttributes(self, image, desc=None, type=None):
         self.assertEqual(image.desc, desc)
         self.assertEqual(image.type, type)
 
@@ -189,8 +146,8 @@ class ExtendedImageStructureTestMixin(ImageStructureTestMixin):
         mediafile = self._mediafile_fixture('image')
         self.assertEqual(len(mediafile.images), 2)
 
-        image = Image(data=self.tiff_data, desc=u'the composer',
-                      type=ImageType.composer)
+        image = Image(data=self.tiff_data, desc='the composer',
+                         type=Image.TYPES.composer)
         mediafile.images += [image]
         mediafile.save()
 
@@ -198,17 +155,17 @@ class ExtendedImageStructureTestMixin(ImageStructureTestMixin):
         self.assertEqual(len(mediafile.images), 3)
 
         # WMA does not preserve the order, so we have to work around this
-        image = list(filter(lambda i: i.mime_type == 'image/tiff',
-                     mediafile.images))[0]
-        self.assertExtendedImageAttributes(
-            image, desc=u'the composer', type=ImageType.composer)
+        image = filter(lambda i: i.mime_type == 'image/tiff',
+                           mediafile.images)[0]
+        self.assertExtendedImageAttributes(image,
+                desc='the composer', type=Image.TYPES.composer)
 
 
+# TODO include this in ReadWriteTestBase if implemented
 class LazySaveTestMixin(object):
     """Mediafile should only write changes when tags have changed
     """
 
-    @unittest.skip(u'not yet implemented')
     def test_unmodified(self):
         mediafile = self._mediafile_fixture('full')
         mtime = self._set_past_mtime(mediafile.path)
@@ -217,7 +174,6 @@ class LazySaveTestMixin(object):
         mediafile.save()
         self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
 
-    @unittest.skip(u'not yet implemented')
     def test_same_tag_value(self):
         mediafile = self._mediafile_fixture('full')
         mtime = self._set_past_mtime(mediafile.path)
@@ -227,32 +183,13 @@ class LazySaveTestMixin(object):
         mediafile.save()
         self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
 
-    def test_update_same_tag_value(self):
-        mediafile = self._mediafile_fixture('full')
-        mtime = self._set_past_mtime(mediafile.path)
-        self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
-
-        mediafile.update({'title': mediafile.title})
-        mediafile.save()
-        self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
-
-    @unittest.skip(u'not yet implemented')
     def test_tag_value_change(self):
         mediafile = self._mediafile_fixture('full')
         mtime = self._set_past_mtime(mediafile.path)
         self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
 
         mediafile.title = mediafile.title
-        mediafile.album = u'another'
-        mediafile.save()
-        self.assertNotEqual(os.stat(mediafile.path).st_mtime, mtime)
-
-    def test_update_changed_tag_value(self):
-        mediafile = self._mediafile_fixture('full')
-        mtime = self._set_past_mtime(mediafile.path)
-        self.assertEqual(os.stat(mediafile.path).st_mtime, mtime)
-
-        mediafile.update({'title': mediafile.title, 'album': u'another'})
+        mediafile.album = 'another'
         mediafile.save()
         self.assertNotEqual(os.stat(mediafile.path).st_mtime, mtime)
 
@@ -268,7 +205,7 @@ class GenreListTestMixin(object):
 
     def test_read_genre_list(self):
         mediafile = self._mediafile_fixture('full')
-        assertCountEqual(self, mediafile.genres, ['the genre'])
+        self.assertItemsEqual(mediafile.genres, ['the genre'])
 
     def test_write_genre_list(self):
         mediafile = self._mediafile_fixture('empty')
@@ -276,7 +213,7 @@ class GenreListTestMixin(object):
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
-        assertCountEqual(self, mediafile.genres, [u'one', u'two'])
+        self.assertItemsEqual(mediafile.genres, ['one', 'two'])
 
     def test_write_genre_list_get_first(self):
         mediafile = self._mediafile_fixture('empty')
@@ -284,149 +221,109 @@ class GenreListTestMixin(object):
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
-        self.assertEqual(mediafile.genre, u'one')
+        self.assertEqual(mediafile.genre, 'one')
 
     def test_append_genre_list(self):
         mediafile = self._mediafile_fixture('full')
-        self.assertEqual(mediafile.genre, u'the genre')
+        self.assertEqual(mediafile.genre, 'the genre')
         mediafile.genres += [u'another']
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
-        assertCountEqual(self, mediafile.genres, [u'the genre', u'another'])
+        self.assertItemsEqual(mediafile.genres, [u'the genre', u'another'])
 
 
-class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
-                        _common.TempDirMixin):
-    """Test writing and reading tags. Subclasses must set ``extension``
-    and ``audio_properties``.
-
-    The basic tests for all audio formats encompass three files provided
-    in our `rsrc` folder: `full.*`, `empty.*`, and `unparseable.*`.
-    Respectively, they should contain a full slate of common fields
-    listed in `full_initial_tags` below; no fields contents at all; and
-    an unparseable release date field.
-
-    To add support for a new file format to MediaFile, add these three
-    files and then create a `ReadWriteTestBase` subclass by copying n'
-    pasting one of the existing subclasses below. You will want to
-    update the `format` field in that subclass, and you will probably
-    need to fiddle with the `bitrate` and other format-specific fields.
-
-    You can also add image tests (using an additional `image.*` fixture
-    file) by including one of the image-related mixins.
+class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin):
+    """Test writing and reading tags. Subclasses must set ``extension`` and
+    ``audio_properties``.
     """
 
     full_initial_tags = {
-        'title':       u'full',
-        'artist':      u'the artist',
-        'album':       u'the album',
-        'genre':       u'the genre',
-        'composer':    u'the composer',
-        'grouping':    u'the grouping',
-        'year':        2001,
-        'month':       None,
-        'day':         None,
-        'date':        datetime.date(2001, 1, 1),
-        'track':       2,
-        'tracktotal':  3,
-        'disc':        4,
-        'disctotal':   5,
-        'lyrics':      u'the lyrics',
-        'comments':    u'the comments',
-        'bpm':         6,
-        'comp':        True,
-        'mb_trackid':  '8b882575-08a5-4452-a7a7-cbb8a1531f9e',
-        'mb_albumid':  '9e873859-8aa4-4790-b985-5a953e8ef628',
-        'mb_artistid': '7cf0ea9d-86b9-4dad-ba9e-2355a64899ea',
-        'art':         None,
-        'label':       u'the label',
+        'title':      u'full',
+        'artist':     u'the artist',
+        'album':      u'the album',
+        'genre':      u'the genre',
+        'composer':   u'the composer',
+        'grouping':   u'the grouping',
+        'year':       2001,
+        'month':      0,
+        'day':        0,
+        'date':       datetime.date(2001, 1, 1),
+        'track':      2,
+        'tracktotal': 3,
+        'disc':       4,
+        'disctotal':  5,
+        'lyrics':     u'the lyrics',
+        'comments':   u'the comments',
+        'bpm':        6,
+        'comp':       True,
+        'mb_trackid': '8b882575-08a5-4452-a7a7-cbb8a1531f9e',
+        'mb_albumid': '9e873859-8aa4-4790-b985-5a953e8ef628',
+        'mb_artistid':'7cf0ea9d-86b9-4dad-ba9e-2355a64899ea',
+        'art':        None,
+        'label':      u'the label',
     }
 
-    tag_fields = [
-        'title',
-        'artist',
-        'album',
-        'genre',
-        'lyricist',
-        'composer',
-        'composer_sort',
-        'arranger',
-        'grouping',
-        'year',
-        'month',
-        'day',
-        'date',
-        'track',
-        'tracktotal',
-        'disc',
-        'disctotal',
-        'lyrics',
-        'comments',
-        'bpm',
-        'comp',
-        'mb_trackid',
-        'mb_albumid',
-        'mb_artistid',
-        'art',
-        'label',
-        'rg_track_peak',
-        'rg_track_gain',
-        'rg_album_peak',
-        'rg_album_gain',
-        'r128_track_gain',
-        'r128_album_gain',
-        'albumartist',
-        'mb_albumartistid',
-        'artist_sort',
-        'albumartist_sort',
-        'acoustid_fingerprint',
-        'acoustid_id',
-        'mb_releasegroupid',
-        'asin',
-        'catalognum',
-        'disctitle',
-        'script',
-        'language',
-        'country',
-        'albumstatus',
-        'media',
-        'albumdisambig',
-        'artist_credit',
-        'albumartist_credit',
-        'original_year',
-        'original_month',
-        'original_day',
-        'original_date',
-        'initial_key',
-    ]
+    empty_tags = {
+        'title':      u'',
+        'artist':     u'',
+        'album':      u'',
+        'genre':      u'',
+        'composer':   u'',
+        'grouping':   u'',
+        'year':       0,
+        'month':      0,
+        'day':        0,
+        'date':       datetime.date.min,
+        'track':      0,
+        'tracktotal': 0,
+        'disc':       0,
+        'disctotal':  0,
+        'lyrics':     u'',
+        'comments':   u'',
+        'bpm':        0,
+        'comp':       False,
+        'mb_trackid': u'',
+        'mb_albumid': u'',
+        'mb_artistid':u'',
+        'art':        None,
+        'label':      u'',
+
+        # Additional, non-iTunes fields.
+        'rg_track_peak':        0.0,
+        'rg_track_gain':        0.0,
+        'rg_album_peak':        0.0,
+        'rg_album_gain':        0.0,
+        'albumartist':          u'',
+        'mb_albumartistid':     u'',
+        'artist_sort':          u'',
+        'albumartist_sort':     u'',
+        'acoustid_fingerprint': u'',
+        'acoustid_id':          u'',
+        'mb_releasegroupid':    u'',
+        'asin':                 u'',
+        'catalognum':           u'',
+        'disctitle':            u'',
+        'script':               u'',
+        'language':             u'',
+        'country':              u'',
+        'albumstatus':          u'',
+        'media':                u'',
+        'albumdisambig':        u'',
+        'artist_credit':        u'',
+        'albumartist_credit':   u'',
+        'original_year':        0,
+        'original_month':       0,
+        'original_day':         0,
+        'original_date':        datetime.date.min,
+    }
 
     def setUp(self):
-        self.create_temp_dir()
+        self.temp_dir = tempfile.mkdtemp()
 
     def tearDown(self):
-        self.remove_temp_dir()
-
-    def test_read_nonexisting(self):
-        mediafile = self._mediafile_fixture('full')
-        os.remove(mediafile.path)
-        self.assertRaises(UnreadableFileError, MediaFile, mediafile.path)
-
-    def test_save_nonexisting(self):
-        mediafile = self._mediafile_fixture('full')
-        os.remove(mediafile.path)
-        try:
-            mediafile.save()
-        except UnreadableFileError:
-            pass
-
-    def test_delete_nonexisting(self):
-        mediafile = self._mediafile_fixture('full')
-        os.remove(mediafile.path)
-        try:
-            mediafile.delete()
-        except UnreadableFileError:
-            pass
+        if os.path.isdir(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
 
     def test_read_audio_properties(self):
         mediafile = self._mediafile_fixture('full')
@@ -443,8 +340,7 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
 
     def test_read_empty(self):
         mediafile = self._mediafile_fixture('empty')
-        for field in self.tag_fields:
-            self.assertIsNone(getattr(mediafile, field))
+        self.assertTags(mediafile, self.empty_tags)
 
     def test_write_empty(self):
         mediafile = self._mediafile_fixture('empty')
@@ -452,16 +348,6 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
 
         for key, value in tags.items():
             setattr(mediafile, key, value)
-        mediafile.save()
-
-        mediafile = MediaFile(mediafile.path)
-        self.assertTags(mediafile, tags)
-
-    def test_update_empty(self):
-        mediafile = self._mediafile_fixture('empty')
-        tags = self._generate_tags()
-
-        mediafile.update(tags)
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
@@ -483,19 +369,6 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
         mediafile = MediaFile(mediafile.path)
         self.assertTags(mediafile, tags)
 
-    def test_update_full(self):
-        mediafile = self._mediafile_fixture('full')
-        tags = self._generate_tags()
-
-        mediafile.update(tags)
-        mediafile.save()
-        # Make sure the tags are already set when writing a second time
-        mediafile.update(tags)
-        mediafile.save()
-
-        mediafile = MediaFile(mediafile.path)
-        self.assertTags(mediafile, tags)
-
     def test_write_date_components(self):
         mediafile = self._mediafile_fixture('full')
         mediafile.year = 2001
@@ -510,11 +383,11 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
         self.assertEqual(mediafile.year, 2001)
         self.assertEqual(mediafile.month, 1)
         self.assertEqual(mediafile.day, 2)
-        self.assertEqual(mediafile.date, datetime.date(2001, 1, 2))
+        self.assertEqual(mediafile.date, datetime.date(2001,1,2))
         self.assertEqual(mediafile.original_year, 1999)
         self.assertEqual(mediafile.original_month, 12)
         self.assertEqual(mediafile.original_day, 30)
-        self.assertEqual(mediafile.original_date, datetime.date(1999, 12, 30))
+        self.assertEqual(mediafile.original_date, datetime.date(1999,12,30))
 
     def test_write_incomplete_date_components(self):
         mediafile = self._mediafile_fixture('empty')
@@ -525,25 +398,41 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
 
         mediafile = MediaFile(mediafile.path)
         self.assertEqual(mediafile.year, 2001)
-        self.assertIsNone(mediafile.month)
-        self.assertIsNone(mediafile.day)
-        self.assertEqual(mediafile.date, datetime.date(2001, 1, 1))
+        self.assertEqual(mediafile.month, 0)
+        self.assertEqual(mediafile.day, 0)
+        self.assertEqual(mediafile.date, datetime.date(2001,1,1))
 
     def test_write_dates(self):
         mediafile = self._mediafile_fixture('full')
-        mediafile.date = datetime.date(2001, 1, 2)
-        mediafile.original_date = datetime.date(1999, 12, 30)
+        mediafile.date = datetime.date(2001,1,2)
+        mediafile.original_date = datetime.date(1999,12,30)
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
         self.assertEqual(mediafile.year, 2001)
         self.assertEqual(mediafile.month, 1)
         self.assertEqual(mediafile.day, 2)
-        self.assertEqual(mediafile.date, datetime.date(2001, 1, 2))
+        self.assertEqual(mediafile.date, datetime.date(2001,1,2))
         self.assertEqual(mediafile.original_year, 1999)
         self.assertEqual(mediafile.original_month, 12)
         self.assertEqual(mediafile.original_day, 30)
-        self.assertEqual(mediafile.original_date, datetime.date(1999, 12, 30))
+        self.assertEqual(mediafile.original_date, datetime.date(1999,12,30))
+
+    def test_read_write_float_none(self):
+        mediafile = self._mediafile_fixture('full')
+        mediafile.rg_track_gain = None
+        mediafile.rg_track_peak = None
+        mediafile.original_year = None
+        mediafile.original_month = None
+        mediafile.original_day = None
+        mediafile.save()
+
+        mediafile = MediaFile(mediafile.path)
+        self.assertEqual(mediafile.rg_track_gain, 0)
+        self.assertEqual(mediafile.rg_track_peak, 0)
+        self.assertEqual(mediafile.original_year, 0)
+        self.assertEqual(mediafile.original_month, 0)
+        self.assertEqual(mediafile.original_day, 0)
 
     def test_write_packed(self):
         mediafile = self._mediafile_fixture('empty')
@@ -564,102 +453,40 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
         self.assertEqual(mediafile.disctotal, 5)
 
         mediafile.track = 10
-        delattr(mediafile, 'tracktotal')
+        mediafile.tracktotal = None
         mediafile.disc = 10
-        delattr(mediafile, 'disctotal')
+        mediafile.disctotal = None
         mediafile.save()
 
         mediafile = MediaFile(mediafile.path)
         self.assertEqual(mediafile.track, 10)
-        self.assertEqual(mediafile.tracktotal, None)
+        self.assertEqual(mediafile.tracktotal, 0)
         self.assertEqual(mediafile.disc, 10)
-        self.assertEqual(mediafile.disctotal, None)
+        self.assertEqual(mediafile.disctotal, 0)
 
     def test_unparseable_date(self):
-        """The `unparseable.*` fixture should not crash but should return None
-        for all parts of the release date.
-        """
         mediafile = self._mediafile_fixture('unparseable')
 
-        self.assertIsNone(mediafile.date)
-        self.assertIsNone(mediafile.year)
-        self.assertIsNone(mediafile.month)
-        self.assertIsNone(mediafile.day)
+        self.assertEqual(mediafile.year, 0)
+        self.assertEqual(mediafile.date, datetime.date.min)
 
-    def test_delete_tag(self):
-        mediafile = self._mediafile_fixture('full')
-
-        keys = self.full_initial_tags.keys()
-        for key in set(keys) - set(['art', 'month', 'day']):
-            self.assertIsNotNone(getattr(mediafile, key))
-        for key in keys:
-            delattr(mediafile, key)
-        mediafile.save()
-        mediafile = MediaFile(mediafile.path)
-
-        for key in keys:
-            self.assertIsNone(getattr(mediafile, key))
-
-    def test_delete_packed_total(self):
-        mediafile = self._mediafile_fixture('full')
-
-        delattr(mediafile, 'tracktotal')
-        delattr(mediafile, 'disctotal')
-
-        mediafile.save()
-        mediafile = MediaFile(mediafile.path)
-        self.assertEqual(mediafile.track, self.full_initial_tags['track'])
-        self.assertEqual(mediafile.disc, self.full_initial_tags['disc'])
-
-    def test_delete_partial_date(self):
-        mediafile = self._mediafile_fixture('empty')
-
-        mediafile.date = datetime.date(2001, 12, 3)
-        mediafile.save()
-        mediafile = MediaFile(mediafile.path)
-        self.assertIsNotNone(mediafile.date)
-        self.assertIsNotNone(mediafile.year)
-        self.assertIsNotNone(mediafile.month)
-        self.assertIsNotNone(mediafile.day)
-
-        delattr(mediafile, 'month')
-        mediafile.save()
-        mediafile = MediaFile(mediafile.path)
-        self.assertIsNotNone(mediafile.date)
-        self.assertIsNotNone(mediafile.year)
-        self.assertIsNone(mediafile.month)
-        self.assertIsNone(mediafile.day)
-
-    def test_delete_year(self):
-        mediafile = self._mediafile_fixture('full')
-
-        self.assertIsNotNone(mediafile.date)
-        self.assertIsNotNone(mediafile.year)
-
-        delattr(mediafile, 'year')
-        mediafile.save()
-        mediafile = MediaFile(mediafile.path)
-        self.assertIsNone(mediafile.date)
-        self.assertIsNone(mediafile.year)
-
-    def assertTags(self, mediafile, tags):  # noqa
+    def assertTags(self, mediafile, tags):
         errors = []
         for key, value in tags.items():
             try:
                 value2 = getattr(mediafile, key)
             except AttributeError:
-                errors.append(u'Tag %s does not exist' % key)
+                errors.append('Tag %s does not exist' % key)
             else:
                 if value2 != value:
-                    errors.append(u'Tag %s: %r != %r' % (key, value2, value))
+                    errors.append('Tag %s: %s != %s' %
+                            (key, value2, value))
         if any(errors):
-            errors = [u'Tags did not match'] + errors
+            errors = ['Tags did not match'] + errors
             self.fail('\n  '.join(errors))
 
     def _mediafile_fixture(self, name):
         name = name + '.' + self.extension
-        if not isinstance(name, bytes):
-            name = name.encode('utf8')
         src = os.path.join(_common.RSRC, name)
         target = os.path.join(self.temp_dir, name)
         shutil.copy(src, target)
@@ -669,22 +496,20 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
         """Return dictionary of tags, mapping tag names to values.
         """
         tags = {}
+        if base is None:
+            base = self.empty_tags
 
-        for key in self.tag_fields:
-            if key.startswith('rg_'):
-                # ReplayGain is float
-                tags[key] = 1.0
-            elif key.startswith('r128_'):
-                # R128 is int
-                tags[key] = -1
-            else:
+        for key, value in base.items():
+            if key == 'art':
+                tags[key] = self.jpg_data
+            elif isinstance(value, unicode):
                 tags[key] = 'value\u2010%s' % key
-
-        for key in ['disc', 'disctotal', 'track', 'tracktotal', 'bpm']:
-            tags[key] = 1
-
-        tags['art'] = self.jpg_data
-        tags['comp'] = True
+            elif isinstance(value, int):
+                tags[key] = 1
+            elif isinstance(value, float):
+                tags[key] = 1.0
+            elif isinstance(value, bool):
+                tags[key] = True
 
         date = datetime.date(2001, 4, 3)
         tags['date'] = date
@@ -697,7 +522,6 @@ class ReadWriteTestBase(ArtTestMixin, GenreListTestMixin,
         tags['original_year'] = original_date.year
         tags['original_month'] = original_date.month
         tags['original_day'] = original_date.day
-
         return tags
 
 
@@ -712,9 +536,9 @@ class PartialTestMixin(object):
     def test_read_track_without_total(self):
         mediafile = self._mediafile_fixture('partial')
         self.assertEqual(mediafile.track, 2)
-        self.assertIsNone(mediafile.tracktotal)
+        self.assertEqual(mediafile.tracktotal, 0)
         self.assertEqual(mediafile.disc, 4)
-        self.assertIsNone(mediafile.disctotal)
+        self.assertEqual(mediafile.disctotal, 0)
 
 
 class MP3Test(ReadWriteTestBase, PartialTestMixin,
@@ -729,12 +553,6 @@ class MP3Test(ReadWriteTestBase, PartialTestMixin,
         'bitdepth': 0,
         'channels': 1,
     }
-
-    def test_unknown_apic_type(self):
-        mediafile = self._mediafile_fixture('image_unknown_type')
-        self.assertEqual(mediafile.images[0].type, ImageType.other)
-
-
 class MP4Test(ReadWriteTestBase, PartialTestMixin,
               ImageStructureTestMixin, unittest.TestCase):
     extension = 'm4a'
@@ -752,42 +570,34 @@ class MP4Test(ReadWriteTestBase, PartialTestMixin,
         with self.assertRaises(ValueError):
             mediafile.images = [Image(data=self.tiff_data)]
 
-    def test_guess_cover(self):
-        # There is no metadata associated with images, we pick one at random
-        pass
-
 
 class AlacTest(ReadWriteTestBase, unittest.TestCase):
     extension = 'alac.m4a'
     audio_properties = {
         'length': 1.0,
-        'bitrate': 21830,
-        # 'format': 'ALAC',
-        'samplerate': 44100,
-        'bitdepth': 16,
-        'channels': 1,
+        'bitrate': 55072,
+        'format': 'ALAC',
+        'samplerate': 0,
+        'bitdepth': 0,
+        'channels': 0,
     }
-
-
 class MusepackTest(ReadWriteTestBase, unittest.TestCase):
     extension = 'mpc'
     audio_properties = {
         'length': 1.0,
         'bitrate': 23458,
-        'format': u'Musepack',
+        'format': 'Musepack',
         'samplerate': 44100,
         'bitdepth': 0,
         'channels': 2,
     }
-
-
 class WMATest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
               unittest.TestCase):
     extension = 'wma'
     audio_properties = {
         'length': 1.0,
         'bitrate': 128000,
-        'format': u'Windows Media',
+        'format': 'Windows Media',
         'samplerate': 44100,
         'bitdepth': 0,
         'channels': 1,
@@ -802,20 +612,13 @@ class WMATest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
         mediafile = MediaFile(mediafile.path)
         self.assertIn(mediafile.genre, [u'one', u'two'])
 
-    def test_read_pure_tags(self):
-        mediafile = self._mediafile_fixture('pure')
-        self.assertEqual(mediafile.comments, u'the comments')
-        self.assertEqual(mediafile.title, u'the title')
-        self.assertEqual(mediafile.artist, u'the artist')
-
-
 class OggTest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
               unittest.TestCase):
     extension = 'ogg'
     audio_properties = {
         'length': 1.0,
         'bitrate': 48000,
-        'format': u'OGG',
+        'format': 'OGG',
         'samplerate': 44100,
         'bitdepth': 0,
         'channels': 1,
@@ -824,7 +627,7 @@ class OggTest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
     def test_read_date_from_year_tag(self):
         mediafile = self._mediafile_fixture('year')
         self.assertEqual(mediafile.year, 2000)
-        self.assertEqual(mediafile.date, datetime.date(2000, 1, 1))
+        self.assertEqual(mediafile.date, datetime.date(2000,1,1))
 
     def test_write_date_to_year_tag(self):
         mediafile = self._mediafile_fixture('empty')
@@ -845,122 +648,48 @@ class OggTest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
         mediafile = MediaFile(mediafile.path)
         self.assertFalse('coverart' in mediafile.mgfile)
 
-    def test_date_tag_with_slashes(self):
-        mediafile = self._mediafile_fixture('date_with_slashes')
-        self.assertEqual(mediafile.year, 2005)
-        self.assertEqual(mediafile.month, 6)
-        self.assertEqual(mediafile.day, 5)
-
-
 class FlacTest(ReadWriteTestBase, PartialTestMixin,
                ExtendedImageStructureTestMixin,
                unittest.TestCase):
     extension = 'flac'
     audio_properties = {
         'length': 1.0,
-        'bitrate': 108688,
-        'format': u'FLAC',
+        'bitrate': 175120,
+        'format': 'FLAC',
         'samplerate': 44100,
         'bitdepth': 16,
         'channels': 1,
     }
-
-
-class ApeTest(ReadWriteTestBase, ExtendedImageStructureTestMixin,
-              unittest.TestCase):
+class ApeTest(ReadWriteTestBase, unittest.TestCase):
     extension = 'ape'
     audio_properties = {
         'length': 1.0,
         'bitrate': 112040,
-        'format': u'APE',
+        'format': 'APE',
         'samplerate': 44100,
         'bitdepth': 16,
         'channels': 1,
     }
-
-
 class WavpackTest(ReadWriteTestBase, unittest.TestCase):
     extension = 'wv'
     audio_properties = {
         'length': 1.0,
         'bitrate': 108744,
-        'format': u'WavPack',
+        'format': 'WavPack',
         'samplerate': 44100,
         'bitdepth': 0,
         'channels': 1,
     }
-
-
 class OpusTest(ReadWriteTestBase, unittest.TestCase):
     extension = 'opus'
     audio_properties = {
         'length': 1.0,
         'bitrate': 57984,
-        'format': u'Opus',
+        'format': 'Opus',
         'samplerate': 48000,
         'bitdepth': 0,
         'channels': 1,
     }
-
-
-class AIFFTest(ReadWriteTestBase, unittest.TestCase):
-    extension = 'aiff'
-    audio_properties = {
-        'length': 1.0,
-        'bitrate': 705600,
-        'format': u'AIFF',
-        'samplerate': 44100,
-        'bitdepth': 0,
-        'channels': 1,
-    }
-
-
-# Check whether we have a Mutagen version with DSF support. We can
-# remove this once we require a version that includes the feature.
-try:
-    import mutagen.dsf  # noqa
-except ImportError:
-    HAVE_DSF = False
-else:
-    HAVE_DSF = True
-
-
-@unittest.skipIf(not HAVE_DSF, "Mutagen does not have DSF support")
-class DSFTest(ReadWriteTestBase, unittest.TestCase):
-    extension = 'dsf'
-    audio_properties = {
-        'length': 0.01,
-        'bitrate': 11289600,
-        'format': u'DSD Stream File',
-        'samplerate': 5644800,
-        'bitdepth': 1,
-        'channels': 2,
-    }
-
-
-class MediaFieldTest(unittest.TestCase):
-
-    def test_properties_from_fields(self):
-        path = os.path.join(_common.RSRC, b'full.mp3')
-        mediafile = MediaFile(path)
-        for field in MediaFile.fields():
-            self.assertTrue(hasattr(mediafile, field))
-
-    def test_properties_from_readable_fields(self):
-        path = os.path.join(_common.RSRC, b'full.mp3')
-        mediafile = MediaFile(path)
-        for field in MediaFile.readable_fields():
-            self.assertTrue(hasattr(mediafile, field))
-
-    def test_known_fields(self):
-        fields = list(ReadWriteTestBase.tag_fields)
-        fields.extend(('encoder', 'images', 'genres', 'albumtype'))
-        assertCountEqual(self, MediaFile.fields(), fields)
-
-    def test_fields_in_readable_fields(self):
-        readable = MediaFile.readable_fields()
-        for field in MediaFile.fields():
-            self.assertIn(field, readable)
 
 
 def suite():

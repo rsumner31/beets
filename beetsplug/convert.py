@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Jakob Schnitzer.
+# Copyright 2013, Jakob Schnitzer.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -15,25 +14,21 @@
 
 """Converts tracks or albums to external directory
 """
-from __future__ import division, absolute_import, print_function
-
+import logging
 import os
 import threading
-import subprocess
+from subprocess import Popen
 import tempfile
-import shlex
-import six
 from string import Template
+import pipes
 import platform
 
-from beets import ui, util, plugins, config
 from beets.plugins import BeetsPlugin
-from beets.util.confit import ConfigTypeError
-from beets import art
-from beets.util.artresizer import ArtResizer
-from beets.library import parse_query_string
-from beets.library import Item
+from beets import ui, util
+from beetsplug.embedart import _embed
+from beets import config
 
+log = logging.getLogger('beets')
 _fs_lock = threading.Lock()
 _temp_files = []  # Keep track of temporary transcoded files for deletion.
 
@@ -43,69 +38,214 @@ ALIASES = {
     u'vorbis': u'ogg',
 }
 
-LOSSLESS_FORMATS = ['ape', 'flac', 'alac', 'wav', 'aiff']
 
-
-def replace_ext(path, ext):
-    """Return the path with its extension replaced by `ext`.
-
-    The new extension must not contain a leading dot.
+def _silent_popen(args):
+    """Invoke a command (like subprocess.Popen) while silencing its
+    error output. Return the Popen object.
     """
-    ext_dot = b'.' + ext
-    return os.path.splitext(path)[0] + ext_dot
+    # On Windows, close_fds doesn't work (i.e., raises an exception)
+    # when stderr is redirected.
+    return Popen(
+        args,
+        close_fds=platform.system() != 'Windows',
+        stderr=open(os.devnull, 'wb'),
+    )
 
 
-def get_format(fmt=None):
-    """Return the command template and the extension from the config.
+def _destination(dest_dir, item, keep_new, path_formats):
+    """Return the path under `dest_dir` where the file should be placed
+    (possibly after conversion).
     """
-    if not fmt:
-        fmt = config['convert']['format'].as_str().lower()
-    fmt = ALIASES.get(fmt, fmt)
+    dest = item.destination(basedir=dest_dir, path_formats=path_formats)
+    if keep_new:
+        # When we're keeping the converted file, no extension munging
+        # occurs.
+        return dest
+    else:
+        # Otherwise, replace the extension.
+        _, ext = get_format()
+        return os.path.splitext(dest)[0] + ext
 
-    try:
-        format_info = config['convert']['formats'][fmt].get(dict)
-        command = format_info['command']
-        extension = format_info.get('extension', fmt)
-    except KeyError:
-        raise ui.UserError(
-            u'convert: format {0} needs the "command" field'
-            .format(fmt)
-        )
-    except ConfigTypeError:
-        command = config['convert']['formats'][fmt].get(str)
-        extension = fmt
+
+def get_format():
+    """Get the currently configured format command and extension.
+    """
+    format = config['convert']['format'].get(unicode).lower()
+    format = ALIASES.get(format, format)
+    format_info = config['convert']['formats'][format].get(dict)
 
     # Convenience and backwards-compatibility shortcuts.
     keys = config['convert'].keys()
     if 'command' in keys:
-        command = config['convert']['command'].as_str()
+        format_info['command'] = config['convert']['command'].get(unicode)
     elif 'opts' in keys:
         # Undocumented option for backwards compatibility with < 1.3.1.
-        command = u'ffmpeg -i $source -y {0} $dest'.format(
-            config['convert']['opts'].as_str()
+        format_info['command'] = u'ffmpeg -i $source -y {0} $dest'.format(
+            config['convert']['opts'].get(unicode)
         )
     if 'extension' in keys:
-        extension = config['convert']['extension'].as_str()
+        format_info['extension'] = config['convert']['extension'].get(unicode)
 
-    return (command.encode('utf-8'), extension.encode('utf-8'))
+    try:
+        return [a.encode('utf8') for a in format_info['command'].split()], \
+                (u'.' + format_info['extension']).encode('utf8')
+    except KeyError:
+        raise ui.UserError(
+            u'convert: format {0} needs "command" and "extension" fields'
+            .format(format)
+        )
 
 
-def should_transcode(item, fmt):
+def encode(source, dest):
+    quiet = config['convert']['quiet'].get()
+
+    if not quiet:
+        log.info(u'Started encoding {0}'.format(util.displayable_path(source)))
+
+    command, _ = get_format()
+    opts = []
+    for arg in command:
+        opts.append(Template(arg).safe_substitute({
+            'source': source,
+            'dest':   dest,
+        }))
+
+    log.debug(u'convert: executing: {0}'.format(
+        u' '.join(pipes.quote(o.decode('utf8', 'ignore')) for o in opts)
+    ))
+    encode = _silent_popen(opts)
+    encode.wait()
+
+    if encode.returncode != 0:
+        # Something went wrong (probably Ctrl+C), remove temporary files
+        log.info(u'Encoding {0} failed. Cleaning up...'
+                 .format(util.displayable_path(source)))
+        util.remove(dest)
+        util.prune_dirs(os.path.dirname(dest))
+        return
+
+    if not quiet:
+        log.info(u'Finished encoding {0}'.format(
+            util.displayable_path(source))
+        )
+
+
+def should_transcode(item):
     """Determine whether the item should be transcoded as part of
     conversion (i.e., its bitrate is high or it has the wrong format).
     """
-    no_convert_queries = config['convert']['no_convert'].as_str_seq()
-    if no_convert_queries:
-        for query_string in no_convert_queries:
-            query, _ = parse_query_string(query_string, Item)
-            if query.match(item):
-                return False
-    if config['convert']['never_convert_lossy_files'] and \
-            not (item.format.lower() in LOSSLESS_FORMATS):
-        return False
     maxbr = config['convert']['max_bitrate'].get(int)
-    return fmt.lower() != item.format.lower() or \
-        item.bitrate >= 1000 * maxbr
+    format_name = config['convert']['format'].get(unicode)
+    return format_name.lower() != item.format.lower() or \
+            item.bitrate >= 1000 * maxbr
+
+
+def convert_item(dest_dir, keep_new, path_formats):
+    while True:
+        item = yield
+        dest = _destination(dest_dir, item, keep_new, path_formats)
+
+        if os.path.exists(util.syspath(dest)):
+            log.info(u'Skipping {0} (target file exists)'.format(
+                util.displayable_path(item.path)
+            ))
+            continue
+
+        # Ensure that only one thread tries to create directories at a
+        # time. (The existence check is not atomic with the directory
+        # creation inside this function.)
+        with _fs_lock:
+            util.mkdirall(dest)
+
+        # When keeping the new file in the library, we first move the
+        # current (pristine) file to the destination. We'll then copy it
+        # back to its old path or transcode it to a new path.
+        if keep_new:
+            log.info(u'Moving to {0}'.
+                     format(util.displayable_path(dest)))
+            util.move(item.path, dest)
+
+        if not should_transcode(item):
+            # No transcoding necessary.
+            log.info(u'Copying {0}'.format(util.displayable_path(item.path)))
+            if keep_new:
+                util.copy(dest, item.path)
+            else:
+                util.copy(item.path, dest)
+
+        else:
+            if keep_new:
+                _, ext = get_format()
+                item.path = os.path.splitext(item.path)[0] + ext
+                encode(dest, item.path)
+            else:
+                encode(item.path, dest)
+
+        # Write tags from the database to the converted file.
+        if not keep_new:
+            item.path = dest
+        item.write()
+
+        # If we're keeping the transcoded file, read it again (after
+        # writing) to get new bitrate, duration, etc.
+        if keep_new:
+            item.read()
+            item.store()  # Store new path and audio data.
+
+        if config['convert']['embed']:
+            album = item.get_album()
+            if album:
+                artpath = album.artpath
+                if artpath:
+                    _embed(artpath, [item])
+
+
+def convert_on_import(lib, item):
+    """Transcode a file automatically after it is imported into the
+    library.
+    """
+    if should_transcode(item):
+        _, ext = get_format()
+        fd, dest = tempfile.mkstemp(ext)
+        os.close(fd)
+        _temp_files.append(dest)  # Delete the transcode later.
+        encode(item.path, dest)
+        item.path = dest
+        item.write()
+        item.read()  # Load new audio information data.
+        item.store()
+
+
+def convert_func(lib, opts, args):
+    dest = opts.dest if opts.dest is not None else \
+            config['convert']['dest'].get()
+
+    if not dest:
+        raise ui.UserError('no convert destination set')
+
+    dest = util.bytestring_path(dest)
+    threads = opts.threads if opts.threads is not None else \
+            config['convert']['threads'].get(int)
+    keep_new = opts.keep_new
+
+    if not config['convert']['paths']:
+        path_formats = ui.get_path_formats()
+    else:
+        path_formats = ui.get_path_formats(config['convert']['paths'])
+
+    ui.commands.list_items(lib, ui.decargs(args), opts.album, None)
+
+    if not ui.input_yn("Convert? (Y/n)"):
+        return
+
+    if opts.album:
+        items = (i for a in lib.albums(ui.decargs(args)) for i in a.items())
+    else:
+        items = iter(lib.items(ui.decargs(args)))
+    convert = [convert_item(dest, keep_new, path_formats)
+               for i in range(threads)]
+    pipe = util.pipeline.Pipeline([items, convert])
+    pipe.run_parallel()
 
 
 class ConvertPlugin(BeetsPlugin):
@@ -113,378 +253,75 @@ class ConvertPlugin(BeetsPlugin):
         super(ConvertPlugin, self).__init__()
         self.config.add({
             u'dest': None,
-            u'pretend': False,
             u'threads': util.cpu_count(),
             u'format': u'mp3',
             u'formats': {
                 u'aac': {
-                    u'command': u'ffmpeg -i $source -y -vn -acodec aac '
-                                u'-aq 1 $dest',
+                    u'command': u'ffmpeg -i $source -y -acodec libfaac '
+                                u'-aq 100 $dest',
                     u'extension': u'm4a',
                 },
                 u'alac': {
-                    u'command': u'ffmpeg -i $source -y -vn -acodec alac $dest',
+                    u'command': u'ffmpeg -i $source -y -acodec alac $dest',
                     u'extension': u'm4a',
                 },
-                u'flac': u'ffmpeg -i $source -y -vn -acodec flac $dest',
-                u'mp3': u'ffmpeg -i $source -y -vn -aq 2 $dest',
-                u'opus':
-                    u'ffmpeg -i $source -y -vn -acodec libopus -ab 96k $dest',
-                u'ogg':
-                    u'ffmpeg -i $source -y -vn -acodec libvorbis -aq 3 $dest',
-                u'wma':
-                    u'ffmpeg -i $source -y -vn -acodec wmav2 -vn $dest',
+                u'flac': {
+                    u'command': u'ffmpeg -i $source -y -acodec flac $dest',
+                    u'extension': u'flac',
+                },
+                u'mp3': {
+                    u'command': u'ffmpeg -i $source -y -aq 2 $dest',
+                    u'extension': u'mp3',
+                },
+                u'opus': {
+                    u'command': u'ffmpeg -i $source -y -acodec libopus -vn '
+                                u'-ab 96k $dest',
+                    u'extension': u'opus',
+                },
+                u'ogg': {
+                    u'command': u'ffmpeg -i $source -y -acodec libvorbis -vn '
+                                u'-aq 2 $dest',
+                    u'extension': u'ogg',
+                },
+                u'windows media': {
+                    u'command': u'ffmpeg -i $source -y -acodec wmav2 '
+                                u'-vn $dest',
+                    u'extension': u'wma',
+                },
             },
             u'max_bitrate': 500,
             u'auto': False,
-            u'tmpdir': None,
             u'quiet': False,
             u'embed': True,
             u'paths': {},
-            u'no_convert': u'',
-            u'never_convert_lossy_files': False,
-            u'copy_album_art': False,
-            u'album_art_maxwidth': 0,
         })
-        self.early_import_stages = [self.auto_convert]
-
-        self.register_listener('import_task_files', self._cleanup)
+        self.import_stages = [self.auto_convert]
 
     def commands(self):
-        cmd = ui.Subcommand('convert', help=u'convert to external location')
-        cmd.parser.add_option('-p', '--pretend', action='store_true',
-                              help=u'show actions but do nothing')
+        cmd = ui.Subcommand('convert', help='convert to external location')
+        cmd.parser.add_option('-a', '--album', action='store_true',
+                              help='choose albums instead of tracks')
         cmd.parser.add_option('-t', '--threads', action='store', type='int',
-                              help=u'change the number of threads, \
+                              help='change the number of threads, \
                               defaults to maximum available processors')
         cmd.parser.add_option('-k', '--keep-new', action='store_true',
-                              dest='keep_new', help=u'keep only the converted \
+                              dest='keep_new', help='keep only the converted \
                               and move the old files')
         cmd.parser.add_option('-d', '--dest', action='store',
-                              help=u'set the destination directory')
-        cmd.parser.add_option('-f', '--format', action='store', dest='format',
-                              help=u'set the target format of the tracks')
-        cmd.parser.add_option('-y', '--yes', action='store_true', dest='yes',
-                              help=u'do not ask for confirmation')
-        cmd.parser.add_album_option()
-        cmd.func = self.convert_func
+                              help='set the destination directory')
+        cmd.func = convert_func
         return [cmd]
 
     def auto_convert(self, config, task):
         if self.config['auto']:
             for item in task.imported_items():
-                self.convert_on_import(config.lib, item)
+                convert_on_import(config.lib, item)
 
-    # Utilities converted from functions to methods on logging overhaul
 
-    def encode(self, command, source, dest, pretend=False):
-        """Encode `source` to `dest` using command template `command`.
-
-        Raises `subprocess.CalledProcessError` if the command exited with a
-        non-zero status code.
-        """
-        # The paths and arguments must be bytes.
-        assert isinstance(command, bytes)
-        assert isinstance(source, bytes)
-        assert isinstance(dest, bytes)
-
-        quiet = self.config['quiet'].get(bool)
-
-        if not quiet and not pretend:
-            self._log.info(u'Encoding {0}', util.displayable_path(source))
-
-        # On Python 3, we need to construct the command to invoke as a
-        # Unicode string. On Unix, this is a little unfortunate---the OS is
-        # expecting bytes---so we use surrogate escaping and decode with the
-        # argument encoding, which is the same encoding that will then be
-        # *reversed* to recover the same bytes before invoking the OS. On
-        # Windows, we want to preserve the Unicode filename "as is."
-        if not six.PY2:
-            command = command.decode(util.arg_encoding(), 'surrogateescape')
-            if platform.system() == 'Windows':
-                source = source.decode(util._fsencoding())
-                dest = dest.decode(util._fsencoding())
-            else:
-                source = source.decode(util.arg_encoding(), 'surrogateescape')
-                dest = dest.decode(util.arg_encoding(), 'surrogateescape')
-
-        # Substitute $source and $dest in the argument list.
-        args = shlex.split(command)
-        encode_cmd = []
-        for i, arg in enumerate(args):
-            args[i] = Template(arg).safe_substitute({
-                'source': source,
-                'dest': dest,
-            })
-            if six.PY2:
-                encode_cmd.append(args[i])
-            else:
-                encode_cmd.append(args[i].encode(util.arg_encoding()))
-
-        if pretend:
-            self._log.info(u'{0}', u' '.join(ui.decargs(args)))
-            return
-
-        try:
-            util.command_output(encode_cmd)
-        except subprocess.CalledProcessError as exc:
-            # Something went wrong (probably Ctrl+C), remove temporary files
-            self._log.info(u'Encoding {0} failed. Cleaning up...',
-                           util.displayable_path(source))
-            self._log.debug(u'Command {0} exited with status {1}: {2}',
-                            args,
-                            exc.returncode,
-                            exc.output)
-            util.remove(dest)
-            util.prune_dirs(os.path.dirname(dest))
-            raise
-        except OSError as exc:
-            raise ui.UserError(
-                u"convert: couldn't invoke '{0}': {1}".format(
-                    u' '.join(ui.decargs(args)), exc
-                )
-            )
-
-        if not quiet and not pretend:
-            self._log.info(u'Finished encoding {0}',
-                           util.displayable_path(source))
-
-    def convert_item(self, dest_dir, keep_new, path_formats, fmt,
-                     pretend=False):
-        """A pipeline thread that converts `Item` objects from a
-        library.
-        """
-        command, ext = get_format(fmt)
-        item, original, converted = None, None, None
-        while True:
-            item = yield (item, original, converted)
-            dest = item.destination(basedir=dest_dir,
-                                    path_formats=path_formats)
-
-            # When keeping the new file in the library, we first move the
-            # current (pristine) file to the destination. We'll then copy it
-            # back to its old path or transcode it to a new path.
-            if keep_new:
-                original = dest
-                converted = item.path
-                if should_transcode(item, fmt):
-                    converted = replace_ext(converted, ext)
-            else:
-                original = item.path
-                if should_transcode(item, fmt):
-                    dest = replace_ext(dest, ext)
-                converted = dest
-
-            # Ensure that only one thread tries to create directories at a
-            # time. (The existence check is not atomic with the directory
-            # creation inside this function.)
-            if not pretend:
-                with _fs_lock:
-                    util.mkdirall(dest)
-
-            if os.path.exists(util.syspath(dest)):
-                self._log.info(u'Skipping {0} (target file exists)',
-                               util.displayable_path(item.path))
-                continue
-
-            if keep_new:
-                if pretend:
-                    self._log.info(u'mv {0} {1}',
-                                   util.displayable_path(item.path),
-                                   util.displayable_path(original))
-                else:
-                    self._log.info(u'Moving to {0}',
-                                   util.displayable_path(original))
-                    util.move(item.path, original)
-
-            if should_transcode(item, fmt):
-                try:
-                    self.encode(command, original, converted, pretend)
-                except subprocess.CalledProcessError:
-                    continue
-            else:
-                if pretend:
-                    self._log.info(u'cp {0} {1}',
-                                   util.displayable_path(original),
-                                   util.displayable_path(converted))
-                else:
-                    # No transcoding necessary.
-                    self._log.info(u'Copying {0}',
-                                   util.displayable_path(item.path))
-                    util.copy(original, converted)
-
-            if pretend:
-                continue
-
-            # Write tags from the database to the converted file.
-            item.try_write(path=converted)
-
-            if keep_new:
-                # If we're keeping the transcoded file, read it again (after
-                # writing) to get new bitrate, duration, etc.
-                item.path = converted
-                item.read()
-                item.store()  # Store new path and audio data.
-
-            if self.config['embed']:
-                album = item.get_album()
-                if album and album.artpath:
-                    self._log.debug(u'embedding album art from {}',
-                                    util.displayable_path(album.artpath))
-                    art.embed_item(self._log, item, album.artpath,
-                                   itempath=converted)
-
-            if keep_new:
-                plugins.send('after_convert', item=item,
-                             dest=dest, keepnew=True)
-            else:
-                plugins.send('after_convert', item=item,
-                             dest=converted, keepnew=False)
-
-    def copy_album_art(self, album, dest_dir, path_formats, pretend=False):
-        """Copies or converts the associated cover art of the album. Album must
-        have at least one track.
-        """
-        if not album or not album.artpath:
-            return
-
-        album_item = album.items().get()
-        # Album shouldn't be empty.
-        if not album_item:
-            return
-
-        # Get the destination of the first item (track) of the album, we use
-        # this function to format the path accordingly to path_formats.
-        dest = album_item.destination(basedir=dest_dir,
-                                      path_formats=path_formats)
-
-        # Remove item from the path.
-        dest = os.path.join(*util.components(dest)[:-1])
-
-        dest = album.art_destination(album.artpath, item_dir=dest)
-        if album.artpath == dest:
-            return
-
-        if not pretend:
-            util.mkdirall(dest)
-
-        if os.path.exists(util.syspath(dest)):
-            self._log.info(u'Skipping {0} (target file exists)',
-                           util.displayable_path(album.artpath))
-            return
-
-        # Decide whether we need to resize the cover-art image.
-        resize = False
-        maxwidth = None
-        if self.config['album_art_maxwidth']:
-            maxwidth = self.config['album_art_maxwidth'].get(int)
-            size = ArtResizer.shared.get_size(album.artpath)
-            self._log.debug('image size: {}', size)
-            if size:
-                resize = size[0] > maxwidth
-            else:
-                self._log.warning(u'Could not get size of image (please see '
-                                  u'documentation for dependencies).')
-
-        # Either copy or resize (while copying) the image.
-        if resize:
-            self._log.info(u'Resizing cover art from {0} to {1}',
-                           util.displayable_path(album.artpath),
-                           util.displayable_path(dest))
-            if not pretend:
-                ArtResizer.shared.resize(maxwidth, album.artpath, dest)
-        else:
-            if pretend:
-                self._log.info(u'cp {0} {1}',
-                               util.displayable_path(album.artpath),
-                               util.displayable_path(dest))
-            else:
-                self._log.info(u'Copying cover art to {0}',
-                               util.displayable_path(album.artpath),
-                               util.displayable_path(dest))
-                util.copy(album.artpath, dest)
-
-    def convert_func(self, lib, opts, args):
-        dest = opts.dest or self.config['dest'].get()
-        if not dest:
-            raise ui.UserError(u'no convert destination set')
-        dest = util.bytestring_path(dest)
-
-        threads = opts.threads or self.config['threads'].get(int)
-
-        path_formats = ui.get_path_formats(self.config['paths'] or None)
-
-        fmt = opts.format or self.config['format'].as_str().lower()
-
-        if opts.pretend is not None:
-            pretend = opts.pretend
-        else:
-            pretend = self.config['pretend'].get(bool)
-
-        if opts.album:
-            albums = lib.albums(ui.decargs(args))
-            items = [i for a in albums for i in a.items()]
-            if not pretend:
-                for a in albums:
-                    ui.print_(format(a, u''))
-        else:
-            items = list(lib.items(ui.decargs(args)))
-            if not pretend:
-                for i in items:
-                    ui.print_(format(i, u''))
-
-        if not items:
-            self._log.error(u'Empty query result.')
-            return
-        if not (pretend or opts.yes or ui.input_yn(u"Convert? (Y/n)")):
-            return
-
-        if opts.album and self.config['copy_album_art']:
-            for album in albums:
-                self.copy_album_art(album, dest, path_formats, pretend)
-
-        convert = [self.convert_item(dest,
-                                     opts.keep_new,
-                                     path_formats,
-                                     fmt,
-                                     pretend)
-                   for _ in range(threads)]
-        pipe = util.pipeline.Pipeline([iter(items), convert])
-        pipe.run_parallel()
-
-    def convert_on_import(self, lib, item):
-        """Transcode a file automatically after it is imported into the
-        library.
-        """
-        fmt = self.config['format'].as_str().lower()
-        if should_transcode(item, fmt):
-            command, ext = get_format()
-
-            # Create a temporary file for the conversion.
-            tmpdir = self.config['tmpdir'].get()
-            if tmpdir:
-                tmpdir = util.py3_path(util.bytestring_path(tmpdir))
-            fd, dest = tempfile.mkstemp(util.py3_path(b'.' + ext), dir=tmpdir)
-            os.close(fd)
-            dest = util.bytestring_path(dest)
-            _temp_files.append(dest)  # Delete the transcode later.
-
-            # Convert.
-            try:
-                self.encode(command, item.path, dest)
-            except subprocess.CalledProcessError:
-                return
-
-            # Change the newly-imported database entry to point to the
-            # converted file.
-            item.path = dest
-            item.write()
-            item.read()  # Load new audio information data.
-            item.store()
-
-    def _cleanup(self, task, session):
-        for path in task.old_paths:
-            if path in _temp_files:
-                if os.path.isfile(path):
-                    util.remove(path)
-                _temp_files.remove(path)
+@ConvertPlugin.listen('import_task_files')
+def _cleanup(task, session):
+    for path in task.old_paths:
+        if path in _temp_files:
+            if os.path.isfile(path):
+                util.remove(path)
+            _temp_files.remove(path)

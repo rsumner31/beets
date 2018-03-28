@@ -72,6 +72,16 @@ typing ``beet web`` and head to http://localhost:8337 in a browser. You can
 browse your collection with queries and, if your browser supports it, play
 music using HTML5 audio.
 
+But for a great listening experience, pair beets with the `Tomahawk`_ music
+player. Tomahawk lets you listen to music from many different sources,
+including a beets server. Just download Tomahawk and open its settings to
+connect it to beets. `A post on the beets blog`_ has a more detailed guide.
+
+.. _A post on the beets blog:
+    http://beets.radbox.org/blog/tomahawk-resolver.html
+.. _Tomahawk: http://www.tomahawk-player.org
+
+
 Transcode music files for media players
 ---------------------------------------
 
@@ -102,17 +112,12 @@ Store any data you like
 The beets database keeps track of a long list of :ref:`built-in fields
 <itemfields>`, but you're not limited to just that list. Say, for example,
 that you like to categorize your music by the setting where it should be
-played. You can invent a new ``context`` attribute to store this. Set the field
+played. You can invent a new ``context`` attribute store this. Set the field
 using the :ref:`modify-cmd` command::
 
     beet modify context=party artist:'beastie boys'
 
-By default beets will show you the changes that are about to be applied and ask
-if you really want to apply them to all, some or none of the items or albums.
-You can type y for "yes", n for "no", or s for "select". If you choose the latter,
-the command will prompt you for each individual matching item or album.
-
-Then :doc:`query </reference/query>` your music just as you would with any
+And then :doc:`query </reference/query>` your music just as you would with any
 other field::
 
     beet ls context:mope
@@ -127,7 +132,7 @@ And, unlike :ref:`built-in fields <itemfields>`, such fields can be removed::
 Read more than you ever wanted to know about the *flexible attributes*
 feature `on the beets blog`_.
 
-.. _on the beets blog: http://beets.io/blog/flexattr.html
+.. _on the beets blog: http://beets.radbox.org/blog/flexattr.html
 
 
 Choose a path style manually for some music

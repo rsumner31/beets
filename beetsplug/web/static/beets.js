@@ -4,7 +4,7 @@ var timeFormat = function(secs) {
         return '0:00';
     }
     secs = Math.round(secs);
-    var mins = '' + Math.floor(secs / 60);
+    var mins = '' + Math.round(secs / 60);
     secs = '' + (secs % 60);
     if (secs.length < 2) {
         secs = '0' + secs;
@@ -146,8 +146,7 @@ var BeetsRouter = Backbone.Router.extend({
         "item/query/:query": "itemQuery",
     },
     itemQuery: function(query) {
-        var queryURL = query.split(/\s+/).map(encodeURIComponent).join('/');
-        $.getJSON('item/query/' + queryURL, function(data) {
+        $.getJSON('/item/query/' + query, function(data) {
             var models = _.map(
                 data['results'],
                 function(d) { return new Item(d); }
@@ -161,7 +160,7 @@ var router = new BeetsRouter();
 
 // Model.
 var Item = Backbone.Model.extend({
-    urlRoot: 'item'
+    urlRoot: '/item'
 });
 var Items = Backbone.Collection.extend({
     model: Item
@@ -197,10 +196,9 @@ var ItemEntryView = Backbone.View.extend({
             this.$('.playing').hide();
     }
 });
-//Holds Title, Artist, Album etc.
-var ItemMainDetailView = Backbone.View.extend({
+var ItemDetailView = Backbone.View.extend({
     tagName: "div",
-    template: _.template($('#item-main-detail-template').html()),
+    template: _.template($('#item-detail-template').html()),
     events: {
         'click .play': 'play',
     },
@@ -212,15 +210,7 @@ var ItemMainDetailView = Backbone.View.extend({
         app.playItem(this.model);
     }
 });
-// Holds Track no., Format, MusicBrainz link, Lyrics, Comments etc.
-var ItemExtraDetailView = Backbone.View.extend({
-    tagName: "div",
-    template: _.template($('#item-extra-detail-template').html()),
-    render: function() {
-        $(this.el).html(this.template(this.model.toJSON()));
-        return this;
-    }
-});
+
 // Main app view.
 var AppView = Backbone.View.extend({
     el: $('body'),
@@ -229,7 +219,7 @@ var AppView = Backbone.View.extend({
     },
     querySubmit: function(ev) {
         ev.preventDefault();
-        router.navigate('item/query/' + encodeURIComponent($('#query').val()), true);
+        router.navigate('item/query/' + escape($('#query').val()), true);
     },
     initialize: function() {
         this.playingItem = null;
@@ -256,15 +246,12 @@ var AppView = Backbone.View.extend({
         $('#results li').removeClass("selected");
         $(view.el).addClass("selected");
 
-        // Show main and extra detail.
-        var mainDetailView = new ItemMainDetailView({model: view.model});
-        $('#main-detail').empty().append(mainDetailView.render().el);
-
-        var extraDetailView = new ItemExtraDetailView({model: view.model});
-        $('#extra-detail').empty().append(extraDetailView.render().el);
+        // Show detail.
+        var detailView = new ItemDetailView({model: view.model});
+        $('#detail').empty().append(detailView.render().el);
     },
     playItem: function(item) {
-        var url = 'item/' + item.get('id') + '/file';
+        var url = '/item/' + item.get('id') + '/file';
         $('#player audio').attr('src', url);
         $('#player audio').get(0).play();
 

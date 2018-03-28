@@ -1,12 +1,8 @@
-.. image:: http://img.shields.io/pypi/v/beets.svg
-    :target: https://pypi.python.org/pypi/beets
+.. image:: https://travis-ci.org/sampsyo/beets.svg?branch=master
+    :target: https://travis-ci.org/sampsyo/beets
 
-.. image:: http://img.shields.io/codecov/c/github/beetbox/beets.svg
-    :target: https://codecov.io/github/beetbox/beets
-
-.. image:: https://travis-ci.org/beetbox/beets.svg?branch=master
-    :target: https://travis-ci.org/beetbox/beets
-
+.. image:: https://coveralls.io/repos/sampsyo/beets/badge.png?branch=master
+    :target: https://coveralls.io/r/sampsyo/beets?branch=master
 
 Beets is the media library management system for obsessive-compulsive music
 geeks.
@@ -32,7 +28,7 @@ imagine for your music collection. Via `plugins`_, beets becomes a panacea:
 - Fetch or calculate all the metadata you could possibly need: `album art`_,
   `lyrics`_, `genres`_, `tempos`_, `ReplayGain`_ levels, or `acoustic
   fingerprints`_.
-- Get metadata from `MusicBrainz`_, `Discogs`_, and `Beatport`_. Or guess
+- Get metadata from `MusicBrainz`_, `Discogs`_, or `Beatport`_. Or guess
   metadata using songs' filenames or their acoustic fingerprints.
 - `Transcode audio`_ to any format you like.
 - Check your library for `duplicate tracks and albums`_ or for `albums that
@@ -49,7 +45,7 @@ If beets doesn't do what you want yet, `writing your own plugin`_ is
 shockingly simple if you know a little Python.
 
 .. _plugins: http://beets.readthedocs.org/page/plugins/
-.. _MPD: http://www.musicpd.org/
+.. _MPD: http://mpd.wikia.com/
 .. _MusicBrainz music collection: http://musicbrainz.org/doc/Collections/
 .. _writing your own plugin:
     http://beets.readthedocs.org/page/dev/plugins.html
@@ -61,16 +57,16 @@ shockingly simple if you know a little Python.
     http://beets.readthedocs.org/page/plugins/duplicates.html
 .. _Transcode audio:
     http://beets.readthedocs.org/page/plugins/convert.html
+.. _Beatport: http://www.beatport.com/
 .. _Discogs: http://www.discogs.com/
 .. _acoustic fingerprints:
     http://beets.readthedocs.org/page/plugins/chroma.html
 .. _ReplayGain: http://beets.readthedocs.org/page/plugins/replaygain.html
-.. _tempos: http://beets.readthedocs.org/page/plugins/acousticbrainz.html
+.. _tempos: http://beets.readthedocs.org/page/plugins/echonest_tempo.html
 .. _genres: http://beets.readthedocs.org/page/plugins/lastgenre.html
 .. _album art: http://beets.readthedocs.org/page/plugins/fetchart.html
 .. _lyrics: http://beets.readthedocs.org/page/plugins/lyrics.html
 .. _MusicBrainz: http://musicbrainz.org/
-.. _Beatport: https://www.beatport.com
 
 Read More
 ---------
@@ -81,7 +77,7 @@ news and updates.
 You can install beets by typing ``pip install beets``. Then check out the
 `Getting Started`_ guide.
 
-.. _its Web site: http://beets.io/
+.. _its Web site: http://beets.radbox.org/
 .. _Getting Started: http://beets.readthedocs.org/page/guides/main.html
 .. _@b33ts: http://twitter.com/b33ts/
 
@@ -91,5 +87,5 @@ Authors
 Beets is by `Adrian Sampson`_ with a supporting cast of thousands. For help,
 please contact the `mailing list`_.
 
-.. _mailing list: https://groups.google.com/forum/#!forum/beets-users
+.. _mailing list: http://beets.radbox.org/
 .. _Adrian Sampson: http://homes.cs.washington.edu/~asampson/

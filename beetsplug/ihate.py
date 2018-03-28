@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Blemjhoo Tezoulbr <baobab@heresiarch.info>.
+# Copyright 2014, Blemjhoo Tezoulbr <baobab@heresiarch.info>.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -13,13 +12,12 @@
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
 
-from __future__ import division, absolute_import, print_function
-
 """Warns you about things you hate (or even blocks import)."""
 
+import logging
 from beets.plugins import BeetsPlugin
 from beets.importer import action
-from beets.library import parse_query_string
+from beets.library import get_query
 from beets.library import Item
 from beets.library import Album
 
@@ -39,6 +37,8 @@ def summary(task):
 
 
 class IHatePlugin(BeetsPlugin):
+    _log = logging.getLogger('beets')
+
     def __init__(self):
         super(IHatePlugin, self).__init__()
         self.register_listener('import_task_choice',
@@ -55,10 +55,11 @@ class IHatePlugin(BeetsPlugin):
         """
         if action_patterns:
             for query_string in action_patterns:
-                query, _ = parse_query_string(
-                    query_string,
-                    Album if task.is_album else Item,
-                )
+                query = None
+                if task.is_album:
+                    query = get_query(query_string, Album)
+                else:
+                    query = get_query(query_string, Item)
                 if any(query.match(item) for item in task.imported_items()):
                     return True
         return False
@@ -69,14 +70,16 @@ class IHatePlugin(BeetsPlugin):
 
         if task.choice_flag == action.APPLY:
             if skip_queries or warn_queries:
-                self._log.debug(u'processing your hate')
+                self._log.debug('[ihate] processing your hate')
                 if self.do_i_hate_this(task, skip_queries):
                     task.choice_flag = action.SKIP
-                    self._log.info(u'skipped: {0}', summary(task))
+                    self._log.info(u'[ihate] skipped: {0}'
+                                   .format(summary(task)))
                     return
                 if self.do_i_hate_this(task, warn_queries):
-                    self._log.info(u'you may hate this: {0}', summary(task))
+                    self._log.info(u'[ihate] you maybe hate this: {0}'
+                                   .format(summary(task)))
             else:
-                self._log.debug(u'nothing to do')
+                self._log.debug('[ihate] nothing to do')
         else:
-            self._log.debug(u'user made a decision, nothing to do')
+            self._log.debug('[ihate] user made a decision, nothing to do')

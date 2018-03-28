@@ -1,6 +1,5 @@
-# -*- coding: utf-8 -*-
 # This file is part of beets.
-# Copyright 2016, Adrian Sampson.
+# Copyright 2013, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -17,36 +16,33 @@
 Beets library. Attempts to implement a compatible protocol to allow
 use of the wide range of MPD clients.
 """
-
-from __future__ import division, absolute_import, print_function
+from __future__ import print_function
 
 import re
 from string import Template
 import traceback
+import logging
 import random
 import time
 
 import beets
 from beets.plugins import BeetsPlugin
 import beets.ui
-from beets import logging
 from beets import vfs
 from beets.util import bluelet
-from beets.library import Item
+from beets.library import ITEM_KEYS_WRITABLE
 from beets import dbcore
-from beets.mediafile import MediaFile
-import six
 
 PROTOCOL_VERSION = '0.13.0'
 BUFSIZE = 1024
 
-HELLO = u'OK MPD %s' % PROTOCOL_VERSION
-CLIST_BEGIN = u'command_list_begin'
-CLIST_VERBOSE_BEGIN = u'command_list_ok_begin'
-CLIST_END = u'command_list_end'
-RESP_OK = u'OK'
-RESP_CLIST_VERBOSE = u'list_OK'
-RESP_ERR = u'ACK'
+HELLO = 'OK MPD %s' % PROTOCOL_VERSION
+CLIST_BEGIN = 'command_list_begin'
+CLIST_VERBOSE_BEGIN = 'command_list_ok_begin'
+CLIST_END = 'command_list_end'
+RESP_OK = 'OK'
+RESP_CLIST_VERBOSE = 'list_OK'
+RESP_ERR = 'ACK'
 
 NEWLINE = u"\n"
 
@@ -71,7 +67,6 @@ SAFE_COMMANDS = (
     u'close', u'commands', u'notcommands', u'password', u'ping',
 )
 
-ITEM_KEYS_WRITABLE = set(MediaFile.fields()).intersection(Item._fields.keys())
 
 # Loggers.
 log = logging.getLogger('beets.bpd')
@@ -79,8 +74,7 @@ global_log = logging.getLogger('beets')
 
 
 # Gstreamer import error.
-class NoGstreamerError(Exception):
-    pass
+class NoGstreamerError(Exception): pass
 
 
 # Error-handling, exceptions, parameter parsing.
@@ -96,38 +90,31 @@ class BPDError(Exception):
         self.index = index
 
     template = Template(u'$resp [$code@$index] {$cmd_name} $message')
-
     def response(self):
         """Returns a string to be used as the response code for the
         erring command.
         """
-        return self.template.substitute({
-            'resp':     RESP_ERR,
-            'code':     self.code,
-            'index':    self.index,
-            'cmd_name': self.cmd_name,
-            'message':  self.message,
-        })
-
+        return self.template.substitute({'resp':     RESP_ERR,
+                                         'code':     self.code,
+                                         'index':    self.index,
+                                         'cmd_name': self.cmd_name,
+                                         'message':  self.message
+                                       })
 
 def make_bpd_error(s_code, s_message):
     """Create a BPDError subclass for a static code and message.
     """
-
     class NewBPDError(BPDError):
         code = s_code
         message = s_message
         cmd_name = ''
         index = 0
-
-        def __init__(self):
-            pass
+        def __init__(self): pass
     return NewBPDError
 
-ArgumentTypeError = make_bpd_error(ERROR_ARG, u'invalid type for argument')
-ArgumentIndexError = make_bpd_error(ERROR_ARG, u'argument out of range')
-ArgumentNotFoundError = make_bpd_error(ERROR_NO_EXIST, u'argument not found')
-
+ArgumentTypeError = make_bpd_error(ERROR_ARG, 'invalid type for argument')
+ArgumentIndexError = make_bpd_error(ERROR_ARG, 'argument out of range')
+ArgumentNotFoundError = make_bpd_error(ERROR_NO_EXIST, 'argument not found')
 
 def cast_arg(t, val):
     """Attempts to call t on val, raising a ArgumentTypeError
@@ -144,14 +131,13 @@ def cast_arg(t, val):
         except ValueError:
             raise ArgumentTypeError()
 
-
 class BPDClose(Exception):
     """Raised by a command invocation to indicate that the connection
     should be closed.
     """
 
-# Generic server infrastructure, implementing the basic protocol.
 
+# Generic server infrastructure, implementing the basic protocol.
 
 class BaseServer(object):
     """A MPD-compatible music player server.
@@ -223,10 +209,10 @@ class BaseServer(object):
         If there is only one song in the playlist it returns 0.
         """
         if len(self.playlist) < 2:
-            return len(self.playlist) - 1
-        new_index = self.random_obj.randint(0, len(self.playlist) - 1)
+            return len(self.playlist)-1
+        new_index = self.random_obj.randint(0, len(self.playlist)-1)
         while new_index == self.current_index:
-            new_index = self.random_obj.randint(0, len(self.playlist) - 1)
+            new_index = self.random_obj.randint(0, len(self.playlist)-1)
         return new_index
 
     def _succ_idx(self):
@@ -238,7 +224,7 @@ class BaseServer(object):
             return self.current_index
         if self.random:
             return self._random_idx()
-        return self.current_index + 1
+        return self.current_index+1
 
     def _prev_idx(self):
         """Returns the index for the previous song to play.
@@ -249,7 +235,7 @@ class BaseServer(object):
             return self.current_index
         if self.random:
             return self._random_idx()
-        return self.current_index - 1
+        return self.current_index-1
 
     def cmd_ping(self, conn):
         """Succeeds."""
@@ -269,7 +255,7 @@ class BaseServer(object):
             conn.authenticated = True
         else:
             conn.authenticated = False
-            raise BPDError(ERROR_PASSWORD, u'incorrect password')
+            raise BPDError(ERROR_PASSWORD, 'incorrect password')
 
     def cmd_commands(self, conn):
         """Lists the commands available to the user."""
@@ -305,14 +291,13 @@ class BaseServer(object):
         Gives a list of response-lines for: volume, repeat, random,
         playlist, playlistlength, and xfade.
         """
-        yield (
-            u'volume: ' + six.text_type(self.volume),
-            u'repeat: ' + six.text_type(int(self.repeat)),
-            u'random: ' + six.text_type(int(self.random)),
-            u'playlist: ' + six.text_type(self.playlist_version),
-            u'playlistlength: ' + six.text_type(len(self.playlist)),
-            u'xfade: ' + six.text_type(self.crossfade),
-        )
+        yield (u'volume: ' + unicode(self.volume),
+               u'repeat: ' + unicode(int(self.repeat)),
+               u'random: ' + unicode(int(self.random)),
+               u'playlist: ' + unicode(self.playlist_version),
+               u'playlistlength: ' + unicode(len(self.playlist)),
+               u'xfade: ' + unicode(self.crossfade),
+              )
 
         if self.current_index == -1:
             state = u'stop'
@@ -322,10 +307,10 @@ class BaseServer(object):
             state = u'play'
         yield u'state: ' + state
 
-        if self.current_index != -1:  # i.e., paused or playing
+        if self.current_index != -1: # i.e., paused or playing
             current_id = self._item_id(self.playlist[self.current_index])
-            yield u'song: ' + six.text_type(self.current_index)
-            yield u'songid: ' + six.text_type(current_id)
+            yield u'song: ' + unicode(self.current_index)
+            yield u'songid: ' + unicode(current_id)
 
         if self.error:
             yield u'error: ' + self.error
@@ -373,9 +358,9 @@ class BaseServer(object):
             raise ArgumentIndexError()
         self.playlist_version += 1
 
-        if self.current_index == index:  # Deleted playing song.
+        if self.current_index == index: # Deleted playing song.
             self.cmd_stop(conn)
-        elif index < self.current_index:  # Deleted before playing.
+        elif index < self.current_index: # Deleted before playing.
             # Shift playing index down.
             self.current_index -= 1
 
@@ -450,7 +435,6 @@ class BaseServer(object):
             except IndexError:
                 raise ArgumentIndexError()
             yield self._item_info(track)
-
     def cmd_playlistid(self, conn, track_id=-1):
         return self.cmd_playlistinfo(conn, self._id_to_index(track_id))
 
@@ -469,13 +453,13 @@ class BaseServer(object):
         Also a dummy implementation.
         """
         for idx, track in enumerate(self.playlist):
-            yield u'cpos: ' + six.text_type(idx)
-            yield u'Id: ' + six.text_type(track.id)
+            yield u'cpos: ' + unicode(idx)
+            yield u'Id: ' + unicode(track.id)
 
     def cmd_currentsong(self, conn):
         """Sends information about the currently-playing song.
         """
-        if self.current_index != -1:  # -1 means stopped.
+        if self.current_index != -1: # -1 means stopped.
             track = self.playlist[self.current_index]
             yield self._item_info(track)
 
@@ -499,7 +483,7 @@ class BaseServer(object):
     def cmd_pause(self, conn, state=None):
         """Set the pause state playback."""
         if state is None:
-            self.paused = not self.paused  # Toggle.
+            self.paused = not self.paused # Toggle.
         else:
             self.paused = cast_arg('intbool', state)
 
@@ -510,14 +494,14 @@ class BaseServer(object):
         if index < -1 or index > len(self.playlist):
             raise ArgumentIndexError()
 
-        if index == -1:  # No index specified: start where we are.
-            if not self.playlist:  # Empty playlist: stop immediately.
+        if index == -1: # No index specified: start where we are.
+            if not self.playlist: # Empty playlist: stop immediately.
                 return self.cmd_stop(conn)
-            if self.current_index == -1:  # No current song.
-                self.current_index = 0  # Start at the beginning.
+            if self.current_index == -1: # No current song.
+                self.current_index = 0 # Start at the beginning.
             # If we have a current song, just stay there.
 
-        else:  # Start with the specified index.
+        else: # Start with the specified index.
             self.current_index = index
 
         self.paused = False
@@ -541,7 +525,6 @@ class BaseServer(object):
         if index < 0 or index >= len(self.playlist):
             raise ArgumentIndexError()
         self.current_index = index
-
     def cmd_seekid(self, conn, track_id, pos):
         index = self._id_to_index(track_id)
         return self.cmd_seek(conn, index, pos)
@@ -551,7 +534,6 @@ class BaseServer(object):
         from guppy import hpy
         heap = hpy().heap()
         print(heap)
-
 
 class Connection(object):
     """A connection between a client and the server. Handles input and
@@ -570,12 +552,12 @@ class Connection(object):
         added after every string. Returns a Bluelet event that sends
         the data.
         """
-        if isinstance(lines, six.string_types):
+        if isinstance(lines, basestring):
             lines = [lines]
         out = NEWLINE.join(lines) + NEWLINE
-        log.debug('{}', out[:-1])  # Don't log trailing newline.
-        if isinstance(out, six.text_type):
-            out = out.encode('utf-8')
+        log.debug(out[:-1]) # Don't log trailing newline.
+        if isinstance(out, unicode):
+            out = out.encode('utf8')
         return self.sock.sendall(out)
 
     def do_command(self, command):
@@ -596,22 +578,21 @@ class Connection(object):
         """
         yield self.send(HELLO)
 
-        clist = None  # Initially, no command list is being constructed.
+        clist = None # Initially, no command list is being constructed.
         while True:
-            line = yield self.sock.readline()
+            line = yield self.sock.readline() 
             if not line:
                 break
             line = line.strip()
             if not line:
                 break
-            line = line.decode('utf8')  # MPD protocol uses UTF-8.
-            log.debug(u'{}', line)
+            log.debug(line)
 
             if clist is not None:
                 # Command list already opened.
                 if line == CLIST_END:
                     yield bluelet.call(self.do_command(clist))
-                    clist = None  # Clear the command list.
+                    clist = None # Clear the command list.
                 else:
                     clist.append(Command(line))
 
@@ -636,7 +617,6 @@ class Connection(object):
             return cls(server, sock).run()
         return _handle
 
-
 class Command(object):
     """A command issued by the client for processing by the server.
     """
@@ -657,10 +637,11 @@ class Command(object):
             if match[0]:
                 # Quoted argument.
                 arg = match[0]
-                arg = arg.replace(u'\\"', u'"').replace(u'\\\\', u'\\')
+                arg = arg.replace('\\"', '"').replace('\\\\', '\\')
             else:
                 # Unquoted argument.
                 arg = match[1]
+            arg = arg.decode('utf8')
             self.args.append(arg)
 
     def run(self, conn):
@@ -699,7 +680,7 @@ class Command(object):
 
         except Exception as e:
             # An "unintentional" error. Hide it from the client.
-            log.error('{}', traceback.format_exc(e))
+            log.error(traceback.format_exc(e))
             raise BPDError(ERROR_SYSTEM, u'server error', self.name)
 
 
@@ -708,7 +689,6 @@ class CommandList(list):
     server. May be verbose, in which case the response is delimited, or
     not. Should be a list of `Command` objects.
     """
-
     def __init__(self, sequence=None, verbose=False):
         """Create a new `CommandList` from the given sequence of
         `Command`s. If `verbose`, this is a verbose command list.
@@ -726,13 +706,14 @@ class CommandList(list):
                 yield bluelet.call(command.run(conn))
             except BPDError as e:
                 # If the command failed, stop executing.
-                e.index = i  # Give the error the correct index.
+                e.index = i # Give the error the correct index.
                 raise e
 
             # Otherwise, possibly send the output delimeter if we're in a
             # verbose ("OK") command list.
             if self.verbose:
                 yield conn.send(RESP_CLIST_VERBOSE)
+
 
 
 # A subclass of the basic, protocol-handling server that actually plays
@@ -767,38 +748,39 @@ class Server(BaseServer):
         """
         self.cmd_next(None)
 
+
     # Metadata helper functions.
 
     def _item_info(self, item):
-        info_lines = [
-            u'file: ' + item.destination(fragment=True),
-            u'Time: ' + six.text_type(int(item.length)),
-            u'Title: ' + item.title,
-            u'Artist: ' + item.artist,
-            u'Album: ' + item.album,
-            u'Genre: ' + item.genre,
-        ]
+        info_lines = [u'file: ' + item.destination(fragment=True),
+                      u'Time: ' + unicode(int(item.length)),
+                      u'Title: ' + item.title,
+                      u'Artist: ' + item.artist,
+                      u'Album: ' + item.album,
+                      u'Genre: ' + item.genre,
+                     ]
 
-        track = six.text_type(item.track)
+        track = unicode(item.track)
         if item.tracktotal:
-            track += u'/' + six.text_type(item.tracktotal)
+            track += u'/' + unicode(item.tracktotal)
         info_lines.append(u'Track: ' + track)
 
-        info_lines.append(u'Date: ' + six.text_type(item.year))
+        info_lines.append(u'Date: ' + unicode(item.year))
 
         try:
             pos = self._id_to_index(item.id)
-            info_lines.append(u'Pos: ' + six.text_type(pos))
+            info_lines.append(u'Pos: ' + unicode(pos))
         except ArgumentNotFoundError:
             # Don't include position if not in playlist.
             pass
 
-        info_lines.append(u'Id: ' + six.text_type(item.id))
+        info_lines.append(u'Id: ' + unicode(item.id))
 
         return info_lines
 
     def _item_id(self, item):
         return item.id
+
 
     # Database updating.
 
@@ -807,10 +789,11 @@ class Server(BaseServer):
         """
         # Path is ignored. Also, the real MPD does this asynchronously;
         # this is done inline.
-        print(u'Building directory tree...')
+        print('Building directory tree...')
         self.tree = vfs.libtree(self.lib)
-        print(u'... done.')
+        print('... done.')
         self.updated_time = time.time()
+
 
     # Path (directory tree) browsing.
 
@@ -848,12 +831,12 @@ class Server(BaseServer):
         node = self._resolve_path(path)
         if isinstance(node, int):
             # Trying to list a track.
-            raise BPDError(ERROR_ARG, u'this is not a directory')
+            raise BPDError(ERROR_ARG, 'this is not a directory')
         else:
             for name, itemid in iter(sorted(node.files.items())):
                 item = self.lib.get_item(itemid)
                 yield self._item_info(item)
-            for name, _ in iter(sorted(node.dirs.items())):
+            for name, _ in iter(sorted(node.dirs.iteritems())):
                 dirpath = self._path_join(path, name)
                 if dirpath.startswith(u"/"):
                     # Strip leading slash (libmpc rejects this).
@@ -873,24 +856,22 @@ class Server(BaseServer):
                 yield u'file: ' + basepath
         else:
             # List a directory. Recurse into both directories and files.
-            for name, itemid in sorted(node.files.items()):
+            for name, itemid in sorted(node.files.iteritems()):
                 newpath = self._path_join(basepath, name)
                 # "yield from"
-                for v in self._listall(newpath, itemid, info):
-                    yield v
-            for name, subdir in sorted(node.dirs.items()):
+                for v in self._listall(newpath, itemid, info): yield v
+            for name, subdir in sorted(node.dirs.iteritems()):
                 newpath = self._path_join(basepath, name)
                 yield u'directory: ' + newpath
-                for v in self._listall(newpath, subdir, info):
-                    yield v
+                for v in self._listall(newpath, subdir, info): yield v
 
     def cmd_listall(self, conn, path=u"/"):
         """Send the paths all items in the directory, recursively."""
         return self._listall(path, self._resolve_path(path), False)
-
     def cmd_listallinfo(self, conn, path=u"/"):
         """Send info on all the items in the directory, recursively."""
         return self._listall(path, self._resolve_path(path), True)
+
 
     # Playlist manipulation.
 
@@ -903,13 +884,11 @@ class Server(BaseServer):
             yield self.lib.get_item(node)
         else:
             # Recurse into a directory.
-            for name, itemid in sorted(node.files.items()):
+            for name, itemid in sorted(node.files.iteritems()):
                 # "yield from"
-                for v in self._all_items(itemid):
-                    yield v
-            for name, subdir in sorted(node.dirs.items()):
-                for v in self._all_items(subdir):
-                    yield v
+                for v in self._all_items(itemid): yield v
+            for name, subdir in sorted(node.dirs.iteritems()):
+                for v in self._all_items(subdir): yield v
 
     def _add(self, path, send_id=False):
         """Adds a track or directory to the playlist, specified by the
@@ -918,7 +897,7 @@ class Server(BaseServer):
         for item in self._all_items(self._resolve_path(path)):
             self.playlist.append(item)
             if send_id:
-                yield u'Id: ' + six.text_type(item.id)
+                yield u'Id: ' + unicode(item.id)
         self.playlist_version += 1
 
     def cmd_add(self, conn, path):
@@ -931,6 +910,7 @@ class Server(BaseServer):
         """Same as `cmd_add` but sends an id back to the client."""
         return self._add(path, True)
 
+
     # Server info.
 
     def cmd_status(self, conn):
@@ -939,13 +919,14 @@ class Server(BaseServer):
         if self.current_index > -1:
             item = self.playlist[self.current_index]
 
-            yield u'bitrate: ' + six.text_type(item.bitrate / 1000)
+            yield u'bitrate: ' + unicode(item.bitrate/1000)
             # Missing 'audio'.
 
             (pos, total) = self.player.time()
-            yield u'time: ' + six.text_type(pos) + u':' + six.text_type(total)
+            yield u'time: ' + unicode(pos) + u':' + unicode(total)
 
         # Also missing 'updating_db'.
+
 
     def cmd_stats(self, conn):
         """Sends some statistics about the library."""
@@ -957,15 +938,15 @@ class Server(BaseServer):
                         'FROM items'
             artists, albums, songs, totaltime = tx.query(statement)[0]
 
-        yield (
-            u'artists: ' + six.text_type(artists),
-            u'albums: ' + six.text_type(albums),
-            u'songs: ' + six.text_type(songs),
-            u'uptime: ' + six.text_type(int(time.time() - self.startup_time)),
-            u'playtime: ' + u'0',  # Missing.
-            u'db_playtime: ' + six.text_type(int(totaltime)),
-            u'db_update: ' + six.text_type(int(self.updated_time)),
-        )
+        yield (u'artists: ' + unicode(artists),
+               u'albums: ' + unicode(albums),
+               u'songs: ' + unicode(songs),
+               u'uptime: ' + unicode(int(time.time() - self.startup_time)),
+               u'playtime: ' + u'0', # Missing.
+               u'db_playtime: ' + unicode(int(totaltime)),
+               u'db_update: ' + unicode(int(self.updated_time)),
+              )
+
 
     # Searching.
 
@@ -982,7 +963,7 @@ class Server(BaseServer):
         u'Composer':        u'composer',
         # Performer?
         u'Disc':            u'disc',
-        u'filename':        u'path',  # Suspect.
+        u'filename':        u'path', # Suspect.
     }
 
     def cmd_tagtypes(self, conn):
@@ -1010,23 +991,21 @@ class Server(BaseServer):
         pairs specified. The any_query_type is used for queries of
         type "any"; if None, then an error is thrown.
         """
-        if kv:  # At least one key-value pair.
+        if kv: # At least one key-value pair.
             queries = []
             # Iterate pairwise over the arguments.
             it = iter(kv)
             for tag, value in zip(it, it):
                 if tag.lower() == u'any':
                     if any_query_type:
-                        queries.append(any_query_type(value,
-                                                      ITEM_KEYS_WRITABLE,
-                                                      query_type))
+                        queries.append(any_query_type(value, ITEM_KEYS_WRITABLE, query_type))
                     else:
                         raise BPDError(ERROR_UNKNOWN, u'no such tagtype')
                 else:
                     _, key = self._tagtype_lookup(tag)
                     queries.append(query_type(key, value))
             return dbcore.query.AndQuery(queries)
-        else:  # No key-value pairs.
+        else: # No key-value pairs.
             return dbcore.query.TrueQuery()
 
     def cmd_search(self, conn, *kv):
@@ -1060,7 +1039,7 @@ class Server(BaseServer):
             rows = tx.query(statement, subvals)
 
         for row in rows:
-            yield show_tag_canon + u': ' + six.text_type(row[0])
+            yield show_tag_canon + u': ' + unicode(row[0])
 
     def cmd_count(self, conn, tag, value):
         """Returns the number and total time of songs matching the
@@ -1072,19 +1051,19 @@ class Server(BaseServer):
         for item in self.lib.items(dbcore.query.MatchQuery(key, value)):
             songs += 1
             playtime += item.length
-        yield u'songs: ' + six.text_type(songs)
-        yield u'playtime: ' + six.text_type(int(playtime))
+        yield u'songs: ' + unicode(songs)
+        yield u'playtime: ' + unicode(int(playtime))
+
 
     # "Outputs." Just a dummy implementation because we don't control
     # any outputs.
 
     def cmd_outputs(self, conn):
         """List the available outputs."""
-        yield (
-            u'outputid: 0',
-            u'outputname: gstreamer',
-            u'outputenabled: 1',
-        )
+        yield (u'outputid: 0',
+               u'outputname: gstreamer',
+               u'outputenabled: 1',
+              )
 
     def cmd_enableoutput(self, conn, output_id):
         output_id = cast_arg(int, output_id)
@@ -1098,6 +1077,7 @@ class Server(BaseServer):
         else:
             raise ArgumentIndexError()
 
+
     # Playback control. The functions below hook into the
     # half-implementations provided by the base class. Together, they're
     # enough to implement all normal playback functionality.
@@ -1107,7 +1087,7 @@ class Server(BaseServer):
         was_paused = self.paused
         super(Server, self).cmd_play(conn, index)
 
-        if self.current_index > -1:  # Not stopped.
+        if self.current_index > -1: # Not stopped.
             if was_paused and not new_index:
                 # Just unpause.
                 self.player.play()
@@ -1132,12 +1112,13 @@ class Server(BaseServer):
         super(Server, self).cmd_seek(conn, index, pos)
         self.player.seek(pos)
 
+
     # Volume control.
 
     def cmd_setvol(self, conn, vol):
         vol = cast_arg(int, vol)
         super(Server, self).cmd_setvol(conn, vol)
-        self.player.volume = float(vol) / 100
+        self.player.volume = float(vol)/100
 
 
 # Beets plugin hooks.
@@ -1152,44 +1133,35 @@ class BPDPlugin(BeetsPlugin):
             'host': u'',
             'port': 6600,
             'password': u'',
-            'volume': VOLUME_MAX,
         })
-        self.config['password'].redact = True
 
-    def start_bpd(self, lib, host, port, password, volume, debug):
+    def start_bpd(self, lib, host, port, password, debug):
         """Starts a BPD server."""
-        if debug:  # FIXME this should be managed by BeetsPlugin
-            self._log.setLevel(logging.DEBUG)
+        if debug:
+            log.setLevel(logging.DEBUG)
         else:
-            self._log.setLevel(logging.WARNING)
+            log.setLevel(logging.WARNING)
         try:
-            server = Server(lib, host, port, password)
-            server.cmd_setvol(None, volume)
-            server.run()
+            Server(lib, host, port, password).run()
         except NoGstreamerError:
-            global_log.error(u'Gstreamer Python bindings not found.')
-            global_log.error(u'Install "gstreamer1.0" and "python-gi"'
-                             u'or similar package to use BPD.')
+            global_log.error('Gstreamer Python bindings not found.')
+            global_log.error('Install "python-gst0.10", "py27-gst-python", '
+                             'or similar package to use BPD.')
 
     def commands(self):
-        cmd = beets.ui.Subcommand(
-            'bpd', help=u'run an MPD-compatible music player server'
-        )
-        cmd.parser.add_option(
-            '-d', '--debug', action='store_true',
-            help=u'dump all MPD traffic to stdout'
-        )
+        cmd = beets.ui.Subcommand('bpd',
+            help='run an MPD-compatible music player server')
+        cmd.parser.add_option('-d', '--debug', action='store_true',
+            help='dump all MPD traffic to stdout')
 
         def func(lib, opts, args):
-            host = self.config['host'].as_str()
-            host = args.pop(0) if args else host
+            host = args.pop(0) if args else self.config['host'].get(unicode)
             port = args.pop(0) if args else self.config['port'].get(int)
             if args:
-                raise beets.ui.UserError(u'too many arguments')
-            password = self.config['password'].as_str()
-            volume = self.config['volume'].get(int)
+                raise beets.ui.UserError('too many arguments')
+            password = self.config['password'].get(unicode)
             debug = opts.debug or False
-            self.start_bpd(lib, host, int(port), password, volume, debug)
+            self.start_bpd(lib, host, int(port), password, debug)
 
         cmd.func = func
         return [cmd]
